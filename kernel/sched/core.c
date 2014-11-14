@@ -1921,7 +1921,8 @@ static inline void set_window_start(struct rq *rq)
 		sched_clock_at_init_jiffy = sched_clock();
 	}
 
-	if (rq->window_start || !sched_enable_hmp)
+	if (rq->window_start || !sched_enable_hmp ||
+	    !sched_clock_initialized() || !sched_clock_cpu(cpu))
 		return;
 
 	if (cpu == sync_cpu) {
