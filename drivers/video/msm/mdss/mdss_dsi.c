@@ -37,6 +37,8 @@
 #define RAW_DATA_OFFSET (64*1024)
 #define CE_GAMMA_MAGIC  0x43454741 //"C" "E" "G" "A"
 
+#include "mdss_livedisplay.h"
+
 #define XO_CLK_RATE	19200000
 
 #define DSI_DISABLE_PC_LATENCY 100
@@ -864,6 +866,9 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		if (mdss_dsi_is_te_based_esd(ctrl_pdata))
 			enable_irq(gpio_to_irq(ctrl_pdata->disp_te_gpio));
 	}
+
+	mdss_livedisplay_update(pdata->panel_info.livedisplay,
+			MODE_UPDATE_ALL);
 
 error:
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
