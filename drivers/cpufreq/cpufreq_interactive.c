@@ -788,6 +788,7 @@ static int cpufreq_interactive_speedchange_task(void *data)
 			}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 			for_each_cpu(j, pcpu->policy->cpus) {
 				pjcpu = &per_cpu(cpuinfo, j);
 
@@ -799,11 +800,10 @@ static int cpufreq_interactive_speedchange_task(void *data)
 				}
 			}
 
-=======
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
+			max_freq = ppol->target_freq;
 			if (unlikely(!mdss_screen_on))
-				if (ppol->target_freq > screen_off_max) max_freq = screen_off_max;
-			else max_freq = ppol->target_freq;
+				if (ppol->target_freq > screen_off_max) 
+					max_freq = screen_off_max;
 
 			if (ppol->target_freq != ppol->policy->cur)
 				__cpufreq_driver_target(ppol->policy,
@@ -824,26 +824,20 @@ static void cpufreq_interactive_boost(void)
 	int i;
 	int anyboost = 0;
 	unsigned long flags[2];
-<<<<<<< HEAD
 	struct cpufreq_interactive_cpuinfo *pcpu;
 	struct cpufreq_interactive_tunables *tunables;
-=======
 	struct cpufreq_interactive_policyinfo *ppol;
 
 	tunables->boosted = true;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 	spin_lock_irqsave(&speedchange_cpumask_lock, flags[0]);
 
 	for_each_online_cpu(i) {
-<<<<<<< HEAD
 		pcpu = &per_cpu(cpuinfo, i);
 		tunables = pcpu->policy->governor_data;
-=======
 		ppol = per_cpu(polinfo, i);
 		if (!ppol || tunables != ppol->policy->governor_data)
 			continue;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 		spin_lock_irqsave(&ppol->target_freq_lock, flags[1]);
 		if (ppol->target_freq < tunables->hispeed_freq) {
