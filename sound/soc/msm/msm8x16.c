@@ -976,7 +976,6 @@ static int ext_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 						&mi2s_rx_clk_v1);
 				break;
 			case (Q6_SUBSYS_AVS2_7):
-			case (Q6_SUBSYS_AVS2_8):
 				mi2s_rx_clk.enable = enable;
 				mi2s_rx_clk.clk_id =
 					msm8x16_get_clk_id(port_id);
@@ -1001,7 +1000,6 @@ static int ext_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 						&mi2s_tx_clk_v1);
 				break;
 			case (Q6_SUBSYS_AVS2_7):
-			case (Q6_SUBSYS_AVS2_8):
 				mi2s_tx_clk.enable = enable;
 				mi2s_tx_clk.clk_id =
 					msm8x16_get_clk_id(port_id);
@@ -1033,7 +1031,6 @@ static int ext_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 					&mi2s_rx_clk_v1);
 				break;
 			case (Q6_SUBSYS_AVS2_7):
-			case (Q6_SUBSYS_AVS2_8):
 				mi2s_rx_clk.enable = enable;
 				mi2s_rx_clk.clk_id =
 					msm8x16_get_clk_id(port_id);
@@ -1057,7 +1054,6 @@ static int ext_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 					&mi2s_tx_clk_v1);
 				break;
 			case (Q6_SUBSYS_AVS2_7):
-			case (Q6_SUBSYS_AVS2_8):
 				mi2s_tx_clk.enable = enable;
 				mi2s_tx_clk.clk_id =
 					msm8x16_get_clk_id(port_id);
