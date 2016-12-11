@@ -196,7 +196,6 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu)
 	unsigned long flags;
 	int i;
 
-<<<<<<< HEAD
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	pcpu->time_in_idle =
 		get_cpu_idle_time(smp_processor_id(),
@@ -208,7 +207,6 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu)
 	del_timer(&pcpu->cpu_timer);
 	pcpu->cpu_timer.expires = expires;
 	add_timer_on(&pcpu->cpu_timer, cpu);
-=======
 	spin_lock_irqsave(&ppol->load_lock, flags);
 	expires = round_to_nw_start(ppol->last_evaluated_jiffy, tunables);
 	if (!slack_only) {
@@ -225,7 +223,6 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu)
 		ppol->policy_timer.expires = expires;
 		add_timer(&ppol->policy_timer);
 	}
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 	if (tunables->timer_slack_val >= 0 &&
 	    ppol->target_freq > ppol->policy->min) {
@@ -441,14 +438,11 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned int loadadjfreq = 0, tmploadadjfreq;
 	unsigned int index;
 	unsigned long flags;
-<<<<<<< HEAD
 	bool boosted;
 	struct cpufreq_govinfo int_info;
-=======
 	unsigned long max_cpu;
 	int i;
 	struct cpufreq_govinfo govinfo;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 	if (!down_read_trylock(&ppol->enable_sem))
 		return;
@@ -503,14 +497,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 					   CPUFREQ_LOAD_CHANGE, &govinfo);
 	}
 
-<<<<<<< HEAD
 	spin_lock_irqsave(&pcpu->target_freq_lock, flags);
 	cpu_load = loadadjfreq / pcpu->policy->cur;
 	boosted = tunables->boost_val || now < tunables->boostpulse_endtime;
 
 	if (cpu_load >= tunables->go_hispeed_load || boosted) {
 		if (pcpu->policy->cur < tunables->hispeed_freq) {
-=======
 	spin_lock_irqsave(&ppol->target_freq_lock, flags);
 	cpu_load = loadadjfreq / ppol->policy->cur;
 	tunables->boosted = tunables->boost_val || now < tunables->boostpulse_endtime;
@@ -518,7 +510,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	if (cpu_load >= tunables->go_hispeed_load || tunables->boosted) {
 		if (ppol->policy->cur < tunables->hispeed_freq &&
 		    cpu_load <= MAX_LOCAL_LOAD) {
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 			new_freq = tunables->hispeed_freq;
 		} else {
 			new_freq = choose_freq(ppol, loadadjfreq);
@@ -530,18 +521,15 @@ static void cpufreq_interactive_timer(unsigned long data)
 		new_freq = choose_freq(ppol, loadadjfreq);
 	}
 
-<<<<<<< HEAD
 	if (pcpu->policy->cur >= tunables->hispeed_freq &&
 	    new_freq > pcpu->policy->cur &&
 	    now - pcpu->hispeed_validate_time <
 	    freq_to_above_hispeed_delay(tunables, pcpu->policy->cur)) {
-=======
 	if (cpu_load <= MAX_LOCAL_LOAD &&
 	    ppol->policy->cur >= tunables->hispeed_freq &&
 	    new_freq > ppol->policy->cur &&
 	    now - ppol->hispeed_validate_time <
 	    freq_to_above_hispeed_delay(tunables, ppol->policy->cur)) {
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 		trace_cpufreq_interactive_notyet(
 			max_cpu, cpu_load, ppol->target_freq,
 			ppol->policy->cur, new_freq);
@@ -560,14 +548,11 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 	new_freq = ppol->freq_table[index].frequency;
 
-<<<<<<< HEAD
 	if (pcpu->target_freq >= pcpu->policy->max
 	    && new_freq < pcpu->target_freq
 	    && now - pcpu->max_freq_idle_start_time <
-=======
 	if (new_freq < ppol->target_freq &&
 	    now - ppol->max_freq_hyst_start_time <
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 	    tunables->max_freq_hysteresis) {
 		trace_cpufreq_interactive_notyet(max_cpu, cpu_load,
 			ppol->target_freq, ppol->policy->cur, new_freq);
@@ -579,13 +564,10 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 * Do not scale below floor_freq unless we have been at or above the
 	 * floor frequency for the minimum sample time since last validated.
 	 */
-<<<<<<< HEAD
 	if (new_freq < pcpu->floor_freq) {
 		if (now - pcpu->floor_validate_time <
-=======
 	if (new_freq < ppol->floor_freq) {
 		if (now - ppol->floor_validate_time <
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 				tunables->min_sample_time) {
 			trace_cpufreq_interactive_notyet(
 				max_cpu, cpu_load, ppol->target_freq,
@@ -603,7 +585,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 * (or the indefinite boost is turned off).
 	 */
 
-<<<<<<< HEAD
 	if (!boosted || new_freq > tunables->hispeed_freq) {
 		pcpu->floor_freq = new_freq;
 		pcpu->floor_validate_time = now;
@@ -615,7 +596,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 			pcpu->policy->cur, new_freq);
 		spin_unlock_irqrestore(&pcpu->target_freq_lock, flags);
 		goto rearm_if_notmax;
-=======
 	if (!tunables->boosted || new_freq > tunables->hispeed_freq) {
 		ppol->floor_freq = new_freq;
 		ppol->floor_validate_time = now;
@@ -630,7 +610,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 			ppol->policy->cur, new_freq);
 		spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 		goto rearm;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 	}
 
 	trace_cpufreq_interactive_target(max_cpu, cpu_load, ppol->target_freq,
@@ -652,13 +631,10 @@ rearm_if_notmax:
 		goto exit;
 
 rearm:
-<<<<<<< HEAD
 	if (!timer_pending(&pcpu->cpu_timer))
 		cpufreq_interactive_timer_resched(data);
-=======
 	if (!timer_pending(&ppol->policy_timer))
 		cpufreq_interactive_timer_resched(data, false);
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 exit:
 	up_read(&ppol->enable_sem);
@@ -715,7 +691,6 @@ static void cpufreq_interactive_idle_start(void)
 	up_read(&pcpu->enable_sem);
 }
 
-<<<<<<< HEAD
 static void cpufreq_interactive_idle_end(void)
 {
 	struct cpufreq_interactive_cpuinfo *pcpu =
@@ -740,8 +715,6 @@ static void cpufreq_interactive_idle_end(void)
 	up_read(&pcpu->enable_sem);
 }
 
-=======
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 static int cpufreq_interactive_speedchange_task(void *data)
 {
 	unsigned int cpu;
@@ -771,24 +744,19 @@ static int cpufreq_interactive_speedchange_task(void *data)
 
 		for_each_cpu(cpu, &tmp_mask) {
 			unsigned int max_freq = 0;
-<<<<<<< HEAD
 			struct cpufreq_interactive_cpuinfo *pjcpu;
 			u64 hvt;
 
 			pcpu = &per_cpu(cpuinfo, cpu);
 			if (!down_read_trylock(&pcpu->enable_sem))
-=======
 			ppol = per_cpu(polinfo, cpu);
 			if (!down_read_trylock(&ppol->enable_sem))
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 				continue;
 			if (!ppol->governor_enabled) {
 				up_read(&ppol->enable_sem);
 				continue;
 			}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 			for_each_cpu(j, pcpu->policy->cpus) {
 				pjcpu = &per_cpu(cpuinfo, j);
 
@@ -1610,7 +1578,6 @@ static struct attribute_group *get_sysfs_attr(void)
 		return &interactive_attr_group_gov_sys;
 }
 
-<<<<<<< HEAD
 static int cpufreq_interactive_idle_notifier(struct notifier_block *nb,
 					     unsigned long val,
 					     void *data)
@@ -1633,9 +1600,7 @@ static struct notifier_block cpufreq_interactive_idle_nb = {
 
 static void save_tunables(struct cpufreq_policy *policy,
 			  struct cpufreq_interactive_tunables *tunables)
-=======
 static void cpufreq_interactive_nop_timer(unsigned long data)
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 {
 }
 
@@ -1816,7 +1781,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		if (!tunables->hispeed_freq)
 			tunables->hispeed_freq = policy->max;
 
-<<<<<<< HEAD
 		for_each_cpu(j, policy->cpus) {
 			pcpu = &per_cpu(cpuinfo, j);
 			pcpu->policy = policy;
@@ -1840,7 +1804,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			up_write(&pcpu->enable_sem);
 			pcpu->reject_notification = false;
 		}
-=======
 		ppol = per_cpu(polinfo, policy->cpu);
 		ppol->policy = policy;
 		ppol->target_freq = policy->cur;
@@ -1859,7 +1822,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		ppol->governor_enabled = 1;
 		up_write(&ppol->enable_sem);
 		ppol->reject_notification = false;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 
 		mutex_unlock(&gov_lock);
 		break;
@@ -1883,7 +1845,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_LIMITS:
 		__cpufreq_driver_target(policy,
 				policy->cur, CPUFREQ_RELATION_L);
-<<<<<<< HEAD
 
 		for_each_cpu(j, policy->cpus) {
 			pcpu = &per_cpu(cpuinfo, j);
@@ -1921,7 +1882,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			}
 
 			pcpu->max_freq = policy->max;
-=======
 
 		ppol = per_cpu(polinfo, policy->cpu);
 
@@ -1938,7 +1898,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 				cpufreq_interactive_timer_resched(policy->cpu,
 								  true);
 			ppol->min_freq = policy->min;
->>>>>>> 52794dd... cpufreq: interactive: Replace per-cpu timer with per-policy timer
 		}
 
 		up_read(&ppol->enable_sem);
