@@ -641,7 +641,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 
 static int mdss_mdp_cmd_do_notifier(struct mdss_mdp_cmd_ctx *ctx)
 {
-	struct mdss_mdp_cmd_ctx *sctx;
+	struct mdss_mdp_cmd_ctx *sctx = NULL;
 
 	sctx = ctx->sync_ctx;
 	if (!sctx || atomic_read(&sctx->koff_cnt) == 0)
@@ -1208,4 +1208,3 @@ int mdss_mdp_cmd_start(struct mdss_mdp_ctl *ctl)
 
 	return 0;
 }
-

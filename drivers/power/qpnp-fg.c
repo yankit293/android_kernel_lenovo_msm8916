@@ -2883,6 +2883,7 @@ static int fg_batt_profile_init(struct fg_chip *chip)
 	const char *data, *batt_type_str, *old_batt_type;
 	bool tried_again = false;
 	u8 reg = 0;
+	old_batt_type = default_batt_type;
 
 wait:
 	ret = wait_for_completion_interruptible_timeout(&chip->batt_id_avail,
