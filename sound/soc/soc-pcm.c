@@ -407,6 +407,26 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 	if (!codec_dai->active)
 		codec_dai->rate = 0;
 
+<<<<<<< HEAD
+=======
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		if (!rtd->pmdown_time || codec->ignore_pmdown_time ||
+		    rtd->dai_link->ignore_pmdown_time) {
+			/* powered down playback stream now */
+			snd_soc_dapm_stream_event(rtd,
+						  SNDRV_PCM_STREAM_PLAYBACK,
+						  SND_SOC_DAPM_STREAM_STOP);
+		} else {
+			/* start delayed pop wq here for playback streams */
+			rtd->pop_wait = 1;
+			queue_delayed_work(system_power_efficient_wq,
+					   &rtd->delayed_work,
+					   msecs_to_jiffies(rtd->pmdown_time));
+		}
+	}
+
+
+>>>>>>> cb25045... Power efficient workqueue patches (squashed)
 	/* Muting the DAC suppresses artifacts caused during digital
 	 * shutdown, for example from stopping clocks.
 	 */
