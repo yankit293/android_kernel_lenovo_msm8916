@@ -80,9 +80,9 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
 
 dtb-$(CONFIG_ARCH_MSM8916) += msm8939-qrd-wt88052_64.dtb \
 	msm8939-qrd-wt82918.dtb \
-	msm8939-v3.0-qrd-wt82918.dtb \
 	msm8939-qrd-wt82918hd.dtb \
-	msm8939-a40-soc616.dtb
+	msm8939-v3.0-qrd-wt82918.dtb \
+	msm8939-v3.0-qrd-wt82918hd.dtb
 
 #dtb-$(CONFIG_ARCH_MSM8916) += msm8916-cdp.dtb \
 #	msm8916-cdp-smb1360.dtb \
