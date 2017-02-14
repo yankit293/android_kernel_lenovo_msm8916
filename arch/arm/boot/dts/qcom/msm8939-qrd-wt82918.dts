@@ -15,6 +15,7 @@
 #include "msm8939.dtsi"
 #include "msm8939-qrd-wt82918.dtsi"
 #include "dsi-panel-otm1901a-tm-1080p-video.dtsi"
+#include "dsi-panel-boe_nt35596-1080p-video.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. MSM8939 QRD SKUK";
@@ -26,7 +27,7 @@
 	i2c@78b9000 { /* BLSP1 QUP5 */
 		focaltech@38 {
 			focaltech,display-coords = <0 0 1080 1920>;
-			focaltech,panel-coords = <0 0 1080 2098>;
+			focaltech,panel-coords = <0 0 1080 1920>;
 		};
 	};
 };
@@ -37,5 +38,9 @@
 };
 
 &dsi_otm1901a_tm_1080p_video {
+	qcom,cont-splash-enabled;
+};
+
+&dsi_boe_nt35595_1080p_video {
 	qcom,cont-splash-enabled;
 };

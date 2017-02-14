@@ -34,8 +34,7 @@
 
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_hx8394f_boe_720p_video>;
-	qcom,dsi-pref-sub-pan = <&dsi_boe_nt35595_1080p_video>;
-	qcom,dsi-pref-sub1-pan = <&dsi_ili9881c_otm_720p_video>;
+	qcom,dsi-pref-sub-pan = <&dsi_ili9881c_otm_720p_video>;
 };
 
 &dsi_hx8394f_boe_720p_video {

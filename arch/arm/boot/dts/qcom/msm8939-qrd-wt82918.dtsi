@@ -12,7 +12,6 @@
 
 #include "msm8939-qrd.dtsi"
 #include "msm8939-camera-sensor-qrd.dtsi"
-#include "dsi-panel-boe_nt35596-1080p-video.dtsi"
 
 &soc {
 	i2c@78b9000 { /* BLSP1 QUP5 */
@@ -433,10 +432,6 @@
 			qcom,supply-post-off-sleep = <11>;
 		};
 	};
-};
-
-&dsi_boe_nt35595_1080p_video {
-	qcom,cont-splash-enabled;
 };
 
 &usb_otg {
