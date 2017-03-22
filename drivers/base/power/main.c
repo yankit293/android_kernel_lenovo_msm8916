@@ -515,6 +515,8 @@ static void dpm_resume_noirq(pm_message_t state)
 {
 	ktime_t starttime = ktime_get();
 
+	print_active_wakeup_sources();
+
 	mutex_lock(&dpm_list_mtx);
 	while (!list_empty(&dpm_noirq_list)) {
 		struct device *dev = to_device(dpm_noirq_list.next);
@@ -595,6 +597,8 @@ static int device_resume_early(struct device *dev, pm_message_t state)
 static void dpm_resume_early(pm_message_t state)
 {
 	ktime_t starttime = ktime_get();
+
+	print_active_wakeup_sources();
 
 	mutex_lock(&dpm_list_mtx);
 	while (!list_empty(&dpm_late_early_list)) {
