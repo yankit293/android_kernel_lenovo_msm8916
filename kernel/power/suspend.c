@@ -258,8 +258,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 
 	if (need_suspend_ops(state) && !suspend_ops)
 		return -ENOSYS;
-	
-	drop_pagecache();//james.hong add for drop page cache in time
+
 	trace_machine_suspend(state);
 	if (need_suspend_ops(state) && suspend_ops->begin) {
 		error = suspend_ops->begin(state);

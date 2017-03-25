@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,17 +25,12 @@ int msm_isp_axi_create_stream(
 	struct msm_vfe_axi_shared_data *axi_data,
 	struct msm_vfe_axi_stream_request_cmd *stream_cfg_cmd)
 {
-	int i, rc = -1;
-	for (i = 0; i < MAX_NUM_STREAM; i++) {
-		if (axi_data->stream_info[i].state == AVALIABLE)
-			break;
+	uint32_t i = stream_cfg_cmd->stream_src;
+	if (i >= MAX_NUM_STREAM) {
+		pr_err("%s:%d invalid stream_src %d\n", __func__, __LINE__,
+			stream_cfg_cmd->stream_src);
+		return -EINVAL;
 	}
-
-	if (i == MAX_NUM_STREAM) {
-		pr_err("%s: No free stream\n", __func__);
-		return rc;
-	}
-
 	if ((axi_data->stream_handle_cnt << 8) == 0)
 		axi_data->stream_handle_cnt++;
 
@@ -1424,7 +1419,7 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 	struct msm_isp_bufq *bufq = NULL;
 
 	if (!reset_cmd) {
-		pr_err("%s: NULL pointer reset cmd %p\n", __func__, reset_cmd);
+		pr_err("%s: NULL pointer reset cmd %pK\n", __func__, reset_cmd);
 		rc = -1;
 		return rc;
 	}
@@ -1449,7 +1444,7 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 		bufq = vfe_dev->buf_mgr->ops->get_bufq(vfe_dev->buf_mgr,
 			stream_info->bufq_handle);
 		if (!bufq) {
-			pr_err("%s: bufq null %p by handle %x\n", __func__,
+			pr_err("%s: bufq null %pK by handle %x\n", __func__,
 				bufq, stream_info->bufq_handle);
 			continue;
 		}

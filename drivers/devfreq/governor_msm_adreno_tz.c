@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014,2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -151,7 +151,7 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 		memcpy(tz_buf, tz_pwrlevels, size_pwrlevels);
 		/* Ensure memcpy completes execution */
 		mb();
-		dmac_flush_range(tz_buf, tz_buf + PAGE_ALIGN(size_pwrlevels));
+		dmac_flush_range(tz_buf, (void *)tz_buf + PAGE_ALIGN(size_pwrlevels));
 
 		desc.args[0] = virt_to_phys(tz_buf);
 		desc.args[1] = size_pwrlevels;
@@ -169,10 +169,6 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 	return ret;
 }
 
-#ifdef CONFIG_ADRENO_IDLER
-extern int adreno_idler(struct devfreq_dev_status stats, struct devfreq *devfreq,
-		 unsigned long *freq);
-#endif
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 				u32 *flag)
 {
@@ -189,22 +185,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 		return result;
 	}
 
-	/* Prevent overflow */
-	if (stats.busy_time >= (1 << 24) || stats.total_time >= (1 << 24)) {
-		stats.busy_time >>= 7;
-		stats.total_time >>= 7;
-	}
-
 	*freq = stats.current_frequency;
-	*flag = 0;
-
-#ifdef CONFIG_ADRENO_IDLER
-	if (adreno_idler(stats, devfreq, freq)) {
-		/* adreno_idler has asked to bail out now */
-		return 0;
-	}
-#endif
-
 	priv->bin.total_time += stats.total_time;
 	priv->bin.busy_time += stats.busy_time;
 

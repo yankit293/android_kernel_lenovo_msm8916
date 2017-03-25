@@ -554,6 +554,14 @@ config MSM_CORE_CTL_HELPER
 	  system load and state. It also supports limiting min and
 	  max online CPUs from userspace.
 
+config MSM_CORE_CTL
+	select MSM_CORE_CTL_HELPER
+	tristate "Core control driver to dynamically hotplug CPUs"
+	help
+	  Support for dynamicatlly hotplugging CPUs from kernel based on
+	  current system load and state. It also supports limiting min and
+	  max online CPUs from userspace.
+
 config MSM_PERFORMANCE
 	tristate "Core control driver to support userspace hotplug requests"
 	help
@@ -571,30 +579,6 @@ config MSM_PERFORMANCE_HOTPLUG_ON
           compile out the nodes needed for core-control functionality through
           msm_performance.
 
-config SECBOOT_FUSE
-	bool "Enable Secure boot fuse Proc Interface"
-	help
-	 Provide a interface for reading CPU secure boot fuse setting
-
-config BRICKED_HOTPLUG
-	bool "Enable kernel based mpdecision"
- 	depends on MSM_RUN_QUEUE_STATS
- 	default y
- 	help
- 	 This enables kernel based multi core control.
-	  
-config STATE_NOTIFIER
-        bool "State Notifier"
-	default y
-
-config MSM_HOTPLUG
-	bool "MSM hotplug driver"
- 	depends on HOTPLUG_CPU
- 	default y
- 	help
- 	  The MSM hotplug driver controls on-/offlining of additional cores based
- 	  on current cpu load.
-			
 source "drivers/soc/qcom/memshare/Kconfig"
 
 endif # ARCH_MSM

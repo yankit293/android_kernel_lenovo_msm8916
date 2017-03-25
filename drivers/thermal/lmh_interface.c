@@ -166,7 +166,8 @@ static ssize_t avail_level_get(struct file *fp, char __user *user_buffer,
 		if (count <= 0) {
 			pr_err("Error getting freq value idx:%d. err:%d\n",
 				       idx, count);
-			return count;
+			count = 0;
+			break;
 		}
 		buf_start += count;
 	}
@@ -880,7 +881,8 @@ static int lmh_mon_init_driver(void)
 {
 	int ret = 0;
 
-	lmh_mon_data = kzalloc(sizeof(lmh_mon_data), GFP_KERNEL);
+	lmh_mon_data = kzalloc(sizeof(struct lmh_mon_driver_data),
+				GFP_KERNEL);
 	if (!lmh_mon_data) {
 		pr_err("No memory\n");
 		return -ENOMEM;

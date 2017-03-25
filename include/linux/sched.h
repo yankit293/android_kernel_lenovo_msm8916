@@ -54,7 +54,6 @@ struct sched_param {
 #include <linux/gfp.h>
 
 #include <asm/processor.h>
-#define WGZ_DEBUG_SCHEDULE
 
 #define SCHED_ATTR_SIZE_VER0	48	/* sizeof first published struct */
 
@@ -164,8 +163,8 @@ extern unsigned long nr_iowait(void);
 extern unsigned long nr_iowait_cpu(int cpu);
 extern unsigned long this_cpu_load(void);
 
-extern void sched_update_nr_prod(int cpu, unsigned long nr, bool inc);
-extern void sched_get_nr_running_avg(int *avg, int *iowait_avg);
+extern void sched_update_nr_prod(int cpu, long delta, bool inc);
+extern void sched_get_nr_running_avg(int *avg, int *iowait_avg, int *big_avg);
 
 extern void calc_global_load(unsigned long ticks);
 extern void update_cpu_load_nohz(void);
@@ -836,8 +835,8 @@ enum cpu_idle_type {
 /*
  * Increase resolution of cpu_power calculations
  */
-#define SCHED_CAPACITY_SHIFT	10
-#define SCHED_CAPACITY_SCALE	(1L << SCHED_CAPACITY_SHIFT)
+#define SCHED_POWER_SHIFT	10
+#define SCHED_POWER_SCALE	(1L << SCHED_POWER_SHIFT)
 
 /*
  * sched-domains (multiprocessor balancing) declarations:
@@ -867,24 +866,6 @@ struct sched_domain_attr {
 }
 
 extern int sched_domain_level_max;
-
-struct capacity_state {
-	unsigned long cap;	/* compute capacity */
-	unsigned long power;	/* power consumption at this compute capacity */
-};
-
-struct idle_state {
-	unsigned long power;	 /* power consumption in this idle state */
-};
-
-struct sched_group_energy {
-	atomic_t ref;
-	unsigned int nr_idle_states;	/* number of idle states */
-	struct idle_state *idle_states;	/* ptr to idle state array */
-	unsigned int nr_idle_states_below; /* number idle states in lower groups */
-	unsigned int nr_cap_states;	/* number of capacity states */
-	struct capacity_state *cap_states; /* ptr to capacity state array */
-};
 
 struct sched_group;
 
@@ -1252,12 +1233,11 @@ struct task_struct {
 				 * execve */
 	unsigned in_iowait:1;
 
-	/* task may not gain privileges */
-	unsigned no_new_privs:1;
-
 	/* Revert to default priority/policy when forking */
 	unsigned sched_reset_on_fork:1;
 	unsigned sched_contributes_to_load:1;
+
+	unsigned long atomic_flags; /* Flags needing atomic access. */
 
 	pid_t pid;
 	pid_t tgid;
@@ -1299,6 +1279,7 @@ struct task_struct {
 
 	cputime_t utime, stime, utimescaled, stimescaled;
 	cputime_t gtime;
+	unsigned long long cpu_power;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
 	struct cputime prev_cputime;
 #endif
@@ -1551,11 +1532,6 @@ struct task_struct {
 #if defined(CONFIG_BCACHE) || defined(CONFIG_BCACHE_MODULE)
 	unsigned int	sequential_io;
 	unsigned int	sequential_io_avg;
-#endif
-#ifdef WGZ_DEBUG_SCHEDULE
-	unsigned long 	debug_state;
-	unsigned long   last_schedule_jiffies;
-	unsigned long   last_check_jiffies;
 #endif
 };
 
@@ -1842,6 +1818,19 @@ static inline unsigned int memalloc_noio_save(void)
 static inline void memalloc_noio_restore(unsigned int flags)
 {
 	current->flags = (current->flags & ~PF_MEMALLOC_NOIO) | flags;
+}
+
+/* Per-process atomic flags. */
+#define PFA_NO_NEW_PRIVS 0x00000001	/* May not gain new privileges. */
+
+static inline bool task_no_new_privs(struct task_struct *p)
+{
+	return test_bit(PFA_NO_NEW_PRIVS, &p->atomic_flags);
+}
+
+static inline void task_set_no_new_privs(struct task_struct *p)
+{
+	set_bit(PFA_NO_NEW_PRIVS, &p->atomic_flags);
 }
 
 /*

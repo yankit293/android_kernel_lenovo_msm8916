@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 
 #include "mdss_dsi.h"
 #include <linux/hardware_info.h> //req  wuzhenzhen.wt 20140924 add for hardware info
+#include "mdss_livedisplay.h"
 
 #define DT_CMD_HDR 6
 
@@ -34,10 +35,9 @@
 #define NT35596_MAX_ERR_CNT 2
 
 #define MIN_REFRESH_RATE 48
+#define DEFAULT_MDP_TRANSFER_TIME 14000
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
-
-bool mdss_screen_on = true;
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -149,7 +149,7 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 	return 0;
 }
 
-static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
+void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds)
 {
 	struct dcs_cmd_req cmdreq;
@@ -599,14 +599,6 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	}
 }
 
-#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
-extern bool s2w_scr_suspended;
-#endif
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-extern bool dt2w_scr_suspended;
-#endif
- 
-
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
@@ -617,12 +609,11 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
-	mdss_screen_on = true;
 	pinfo = &pdata->panel_info;
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -696,13 +687,42 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 	pr_debug("%s:-\n", __func__);
+	return 0;
+}
 
-#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
-       s2w_scr_suspended = false;
-#endif
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-        dt2w_scr_suspended = false;
-#endif
+static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	struct mdss_panel_info *pinfo;
+	struct dsi_panel_cmds *on_cmds;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
+
+	pinfo = &pdata->panel_info;
+	if (pinfo->dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			goto end;
+	}
+
+	on_cmds = &ctrl->post_panel_on_cmds;
+
+	pr_debug("%s: ctrl=%pK cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
+
+	if (on_cmds->cmd_cnt) {
+		msleep(50);	/* wait for 3 vsync passed */
+		mdss_dsi_panel_cmds_send(ctrl, on_cmds);
+	}
+
+end:
+	pr_debug("%s:-\n", __func__);
 	return 0;
 }
 
@@ -720,7 +740,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -730,19 +750,9 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
-	mdss_screen_on = false;
-
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_BLANK;
 	pr_debug("%s:-\n", __func__);
-
-#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
-       s2w_scr_suspended = true;
-#endif
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-       dt2w_scr_suspended = true;
-#endif
-
 	return 0;
 }
 
@@ -761,7 +771,7 @@ static int mdss_dsi_panel_low_power_config(struct mdss_panel_data *pdata,
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
+	pr_debug("%s: ctrl=%pK ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
 		enable);
 
 	/* Any panel specific low power commands/config */
@@ -857,7 +867,7 @@ static void mdss_dsi_parse_trigger(struct device_node *np, char *trigger,
 }
 
 
-static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
+int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)
 {
 	const char *data;
@@ -1564,6 +1574,133 @@ int parse_cmldine_for_lcd(int *hue, int *saturation)
 		return 0;
 }
 
+
+/**
+ * get_mdss_dsi_even_lane_clam_mask() - Computest DSI lane 0 & 2 clamps mask
+ * @dlane_swap: dsi_lane_map_type
+ * @lane_id: DSI lane (DSI_LANE_0)/(DSI_LANE_2)
+ *
+ * Return DSI lane 0 & 2 clamp mask based on lane swap configuration.
+ * Clamp Bit for Physical lanes
+ *      Lane Num        Bit     Mask
+ *      Lane0           Bit 7   0x80
+ *      Lane1           Bit 5   0x20
+ *      Lane2           Bit 3   0x08
+ *      Lane3           Bit 2   0x02
+ */
+u32 get_mdss_dsi_even_lane_clam_mask(char dlane_swap,
+				     enum dsi_lane_ids lane_id)
+{
+	u32 lane0_mask = 0;
+	u32 lane2_mask = 0;
+
+	switch (dlane_swap) {
+	case DSI_LANE_MAP_0123:
+	case DSI_LANE_MAP_0321:
+		lane0_mask = 0x80;
+		lane2_mask = 0x08;
+		break;
+	case DSI_LANE_MAP_3012:
+	case DSI_LANE_MAP_1032:
+		lane0_mask = 0x20;
+		lane2_mask = 0x02;
+		break;
+	case DSI_LANE_MAP_2301:
+	case DSI_LANE_MAP_2103:
+		lane0_mask = 0x08;
+		lane2_mask = 0x80;
+		break;
+	case DSI_LANE_MAP_1230:
+	case DSI_LANE_MAP_3210:
+		lane0_mask = 0x02;
+		lane2_mask = 0x20;
+		break;
+	default:
+		lane0_mask = 0x00;
+		lane2_mask = 0x00;
+		break;
+	}
+	if (lane_id == DSI_LANE_0)
+		return lane0_mask;
+	else if (lane_id == DSI_LANE_2)
+		return lane2_mask;
+	else
+		return 0;
+}
+
+/**
+ * get_mdss_dsi_odd_lane_clam_mask() - Computest DSI lane 1 & 3 clamps mask
+ * @dlane_swap: dsi_lane_map_type
+ * @lane_id: DSI lane (DSI_LANE_1)/(DSI_LANE_3)
+ *
+ * Return DSI lane 1 & 3 clamp mask based on lane swap configuration.
+ */
+u32 get_mdss_dsi_odd_lane_clam_mask(char dlane_swap,
+					enum dsi_lane_ids lane_id)
+{
+	u32 lane1_mask = 0;
+	u32 lane3_mask = 0;
+
+	switch (dlane_swap) {
+	case DSI_LANE_MAP_0123:
+	case DSI_LANE_MAP_2103:
+		lane1_mask = 0x20;
+		lane3_mask = 0x02;
+		break;
+	case DSI_LANE_MAP_3012:
+	case DSI_LANE_MAP_3210:
+		lane1_mask = 0x08;
+		lane3_mask = 0x80;
+		break;
+	case DSI_LANE_MAP_2301:
+	case DSI_LANE_MAP_0321:
+		lane1_mask = 0x02;
+		lane3_mask = 0x20;
+		break;
+	case DSI_LANE_MAP_1230:
+	case DSI_LANE_MAP_1032:
+		lane1_mask = 0x80;
+		lane3_mask = 0x08;
+		break;
+	default:
+		lane1_mask = 0x00;
+		lane3_mask = 0x00;
+		break;
+	}
+	if (lane_id == DSI_LANE_1)
+		return lane1_mask;
+	else if (lane_id == DSI_LANE_3)
+		return lane3_mask;
+	else
+		return 0;
+}
+static void mdss_dsi_set_lane_clamp_mask(struct mipi_panel_info *mipi)
+{
+	u32 mask = 0;
+
+	if (mipi->data_lane0)
+		mask = get_mdss_dsi_even_lane_clam_mask(mipi->dlane_swap,
+					DSI_LANE_0);
+	if (mipi->data_lane1)
+		mask |= get_mdss_dsi_odd_lane_clam_mask(mipi->dlane_swap,
+					DSI_LANE_1);
+	if (mipi->data_lane2)
+		mask |= get_mdss_dsi_even_lane_clam_mask(mipi->dlane_swap,
+					DSI_LANE_2);
+	if (mipi->data_lane3)
+		mask |= get_mdss_dsi_odd_lane_clam_mask(mipi->dlane_swap,
+					DSI_LANE_3);
+
+	mipi->phy_lane_clamp_mask = mask;
+}
+
+
+void mdss_dsi_unregister_bl_settings(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	if (ctrl_pdata->bklt_ctrl == BL_WLED)
+		led_trigger_unregister_simple(bl_led_trigger);
+}
+
 static int mdss_panel_parse_dt(struct device_node *np,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
@@ -1844,6 +1981,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	pinfo->mipi.frame_rate = (!rc ? tmp : 60);
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-panel-clockrate", &tmp);
 	pinfo->clk_rate = (!rc ? tmp : 0);
+	rc = of_property_read_u32(np, "qcom,mdss-mdp-transfer-time-us", &tmp);
+	pinfo->mdp_transfer_time_us = (!rc ? tmp : DEFAULT_MDP_TRANSFER_TIME);
 	data = of_get_property(np, "qcom,mdss-dsi-panel-timings", &len);
 	if ((!data) || (len != 12)) {
 		pr_err("%s:%d, Unable to read Phy timing settings",
@@ -1880,6 +2019,9 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->on_cmds,
 		"qcom,mdss-dsi-on-command", "qcom,mdss-dsi-on-command-state");
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->post_panel_on_cmds,
+		"qcom,mdss-dsi-post-panel-on-command", NULL);
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
@@ -1970,6 +2112,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_dfps_config(np, ctrl_pdata);
 
+	mdss_livedisplay_parse_dt(np, pinfo);
+
 	return 0;
 
 error:
@@ -2009,6 +2153,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 		return rc;
 	}
 
+	mdss_dsi_set_lane_clamp_mask(&pinfo->mipi);
 	if (!cmd_cfg_cont_splash)
 		pinfo->cont_splash_enabled = false;
 	pr_info("%s: Continuous splash %s\n", __func__,
@@ -2019,6 +2164,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 	pinfo->esd_rdy = false;
 
 	ctrl_pdata->on = mdss_dsi_panel_on;
+	ctrl_pdata->post_panel_on = mdss_dsi_post_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;
 	ctrl_pdata->low_power_config = mdss_dsi_panel_low_power_config;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #define LPASS_BE_HDMI "HDMI"
 #define LPASS_BE_INT_BT_SCO_RX "INT_BT_SCO_RX"
 #define LPASS_BE_INT_BT_SCO_TX "INT_BT_SCO_TX"
+#define LPASS_BE_INT_BT_A2DP_RX "INT_BT_A2DP_RX"
 #define LPASS_BE_INT_FM_RX "INT_FM_RX"
 #define LPASS_BE_INT_FM_TX "INT_FM_TX"
 #define LPASS_BE_AFE_PCM_RX "RT_PROXY_DAI_001_RX"
@@ -103,6 +104,8 @@ enum {
 	MSM_FRONTEND_DAI_LSM8,
 	MSM_FRONTEND_DAI_VOICE2_STUB,
 	MSM_FRONTEND_DAI_VOWLAN,
+	MSM_FRONTEND_DAI_VOICEMMODE1,
+	MSM_FRONTEND_DAI_VOICEMMODE2,
 	MSM_FRONTEND_DAI_MAX,
 };
 
@@ -155,6 +158,7 @@ enum {
 	MSM_BACKEND_DAI_SLIMBUS_6_TX,
 	MSM_BACKEND_DAI_SPDIF_RX,
 	MSM_BACKEND_DAI_SECONDARY_MI2S_RX_SD1,
+	MSM_BACKEND_DAI_INT_BT_A2DP_RX,
 	MSM_BACKEND_DAI_MAX,
 };
 
@@ -196,7 +200,7 @@ struct msm_pcm_routing_bdai_data {
 	unsigned int  sample_rate;
 	unsigned int  channel;
 	unsigned int  format;
-	u32 compr_passthr_mode;
+	u32 passthr_mode;
 	char *name;
 };
 

@@ -36,8 +36,6 @@
 #ifndef CONFIG_LOGCAT_SIZE
 #define CONFIG_LOGCAT_SIZE 256
 #endif
-#undef CONFIG_LOGCAT_SIZE
-#define CONFIG_LOGCAT_SIZE 4096 
 
 /**
  * struct logger_log - represents a specific log, such as 'main' or 'radio'

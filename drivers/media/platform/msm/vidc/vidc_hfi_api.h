@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -114,6 +114,10 @@ enum hal_extradata_id {
 	HAL_EXTRADATA_DIGITAL_ZOOM,
 	HAL_EXTRADATA_LTR_INFO,
 	HAL_EXTRADATA_METADATA_MBI,
+	HAL_EXTRADATA_MASTERING_DISPLAY_COLOUR_SEI,
+	HAL_EXTRADATA_CONTENT_LIGHT_LEVEL_SEI,
+	HAL_EXTRADATA_VUI_DISPLAY_INFO,
+	HAL_EXTRADATA_VPX_COLORSPACE,
 };
 
 enum hal_property {
@@ -216,6 +220,8 @@ enum hal_property {
 	HAL_PARAM_VENC_HIER_B_MAX_ENH_LAYERS,
 	HAL_PARAM_VDEC_NON_SECURE_OUTPUT2,
 	HAL_PARAM_VENC_HIER_P_HYBRID_MODE,
+	HAL_PARAM_VENC_VIDEO_SIGNAL_INFO,
+	HAL_PARAM_VENC_CONSTRAINED_INTRA_PRED,
 };
 
 enum hal_domain {
@@ -946,6 +952,13 @@ struct hal_vpe_color_space_conversion {
 	u32 csc_limit[HAL_MAX_LIMIT_COEFFS];
 };
 
+struct hal_video_signal_info {
+	u32 color_space;
+	u32 transfer_chars;
+	u32 matrix_coeffs;
+	bool full_range;
+};
+
 enum vidc_resource_id {
 	VIDC_RESOURCE_OCMEM = 0x00000001,
 	VIDC_UNUSED_RESORUCE = 0x10000000,
@@ -1005,6 +1018,14 @@ struct vidc_frame_data {
 struct vidc_seq_hdr {
 	ion_phys_addr_t seq_hdr;
 	u32 seq_hdr_len;
+};
+
+struct hal_fw_info {
+	char version[128];
+	int base_addr;
+	int register_base;
+	int register_size;
+	int irq;
 };
 
 enum hal_flush {
@@ -1281,14 +1302,6 @@ enum msm_vidc_hfi_type {
 	VIDC_HFI_Q6,
 };
 
-enum fw_info {
-	FW_BASE_ADDRESS,
-	FW_REGISTER_BASE,
-	FW_REGISTER_SIZE,
-	FW_IRQ,
-	FW_INFO_MAX,
-};
-
 enum msm_vidc_thermal_level {
 	VIDC_THERMAL_NORMAL = 0,
 	VIDC_THERMAL_LOW,
@@ -1370,7 +1383,7 @@ struct hfi_device {
 	int (*load_fw)(void *dev);
 	void (*unload_fw)(void *dev);
 	int (*resurrect_fw)(void *dev);
-	int (*get_fw_info)(void *dev, enum fw_info info);
+	int (*get_fw_info)(void *dev, struct hal_fw_info *fw_info);
 	int (*get_stride_scanline)(int color_fmt, int width,
 		int height,	int *stride, int *scanlines);
 	int (*session_clean)(void *sess);

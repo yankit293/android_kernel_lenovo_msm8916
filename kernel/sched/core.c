@@ -3254,12 +3254,6 @@ out:
  */
 int wake_up_process(struct task_struct *p)
 {
-#ifdef WGZ_DEBUG_SCHEDULE
-	if(p->state == __TASK_STOPPED && p->debug_state == __TASK_STOPPED)
-	{
-		return 0;
-	}
-#endif
 	WARN_ON(task_is_stopped_or_traced(p));
 	return try_to_wake_up(p, TASK_NORMAL, 0);
 }
@@ -4734,10 +4728,6 @@ need_resched:
 		dlog("%s: enter context_switch at %llu\n",
 						__func__, sched_clock());
 #endif
-
-#ifdef WGZ_DEBUG_SCHEDULE
-		next->last_schedule_jiffies = jiffies;
-#endif
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*
 		 * The context switch have flipped the stack from under us
@@ -5802,6 +5792,7 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 	};
 	return __sched_setscheduler(p, &attr, false);
 }
+EXPORT_SYMBOL(sched_setscheduler_nocheck);
 
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
@@ -7372,7 +7363,7 @@ static int sched_domain_debug_one(struct sched_domain *sd, int cpu, int level,
 		cpulist_scnprintf(str, sizeof(str), sched_group_cpus(group));
 
 		printk(KERN_CONT " %s", str);
-		if (group->sgp->power != SCHED_CAPACITY_SCALE) {
+		if (group->sgp->power != SCHED_POWER_SCALE) {
 			printk(KERN_CONT " (cpu_power = %d)",
 				group->sgp->power);
 		}
@@ -7839,7 +7830,7 @@ build_overlap_sched_groups(struct sched_domain *sd, int cpu)
 		 * domains and no possible iteration will get us here, we won't
 		 * die on a /0 trap.
 		 */
-		sg->sgp->power = SCHED_CAPACITY_SCALE * cpumask_weight(sg_span);
+		sg->sgp->power = SCHED_POWER_SCALE * cpumask_weight(sg_span);
 
 		/*
 		 * Make sure the first group of this domain contains the
@@ -9021,7 +9012,7 @@ void __init sched_init(void)
 #ifdef CONFIG_SMP
 		rq->sd = NULL;
 		rq->rd = NULL;
-		rq->cpu_power = SCHED_CAPACITY_SCALE;
+		rq->cpu_power = SCHED_POWER_SCALE;
 		rq->post_schedule = 0;
 		rq->active_balance = 0;
 		rq->next_balance = jiffies;
@@ -10167,4 +10158,3 @@ void dump_cpu_task(int cpu)
 	pr_info("Task dump for CPU %d:\n", cpu);
 	sched_show_task(cpu_curr(cpu));
 }
-

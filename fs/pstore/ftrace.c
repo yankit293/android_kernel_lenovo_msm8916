@@ -54,7 +54,7 @@ static struct ftrace_ops pstore_ftrace_ops __read_mostly = {
 };
 
 static DEFINE_MUTEX(pstore_ftrace_lock);
-static bool pstore_ftrace_enabled = true;
+static bool pstore_ftrace_enabled;
 
 static ssize_t pstore_ftrace_knob_write(struct file *f, const char __user *buf,
 					size_t count, loff_t *ppos)
@@ -118,7 +118,7 @@ void pstore_register_ftrace(void)
 		return;
 	}
 
-	file = debugfs_create_file("record_ftrace", 0600, dir, &pstore_ftrace_enabled /*NULL*/,
+	file = debugfs_create_file("record_ftrace", 0600, dir, NULL,
 				   &pstore_knob_fops);
 	if (!file) {
 		pr_err("%s: unable to create record_ftrace file\n", __func__);

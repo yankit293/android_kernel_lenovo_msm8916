@@ -464,7 +464,7 @@
 				bias-pull-up;
 			};
 		};
-			gpio_led_pins {
+		gpio_led_pins {
 			qcom,pins = <&gp 36>,<&gp 69>;
 			qcom,num-grp-pins = <2>;
 			label = "gpio-led-pins";

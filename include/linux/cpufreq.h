@@ -16,6 +16,7 @@
 #include <linux/kobject.h>
 #include <linux/notifier.h>
 #include <linux/sysfs.h>
+#include <asm/cputime.h>
 
 /*********************************************************************
  *                        CPUFREQ INTERFACE                          *
@@ -163,7 +164,6 @@ static inline void disable_cpufreq(void) { }
 
 #define CPUFREQ_RELATION_L 0  /* lowest frequency at or above target */
 #define CPUFREQ_RELATION_H 1  /* highest frequency below or at target */
-#define CPUFREQ_RELATION_C 2  /* closest frequency to target */
 
 struct freq_attr {
 	struct attribute attr;
@@ -432,30 +432,6 @@ extern struct cpufreq_governor cpufreq_gov_conservative;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE)
 extern struct cpufreq_governor cpufreq_gov_interactive;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_interactive)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_LIONFISH)
-extern struct cpufreq_governor cpufreq_gov_lionfish;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_lionfish)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_DANCEDANCE)
-extern struct cpufreq_governor cpufreq_gov_dancedance;
-#define CPUFREQ_DEFAULT_GOVERNOR 	(&cpufreq_gov_dancedance)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_LIONHEART)
-extern struct cpufreq_governor cpufreq_gov_lionheart;
-#define CPUFREQ_DEFAULT_GOVERNOR 	(&cpufreq_gov_lionheart)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_SMARTASS2)
-extern struct cpufreq_governor cpufreq_gov_smartass2;
-#define CPUFREQ_DEFAULT_GOVERNOR 	(&cpufreq_gov_smartass2)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_BIOSHOCK)
-extern struct cpufreq_governor cpufreq_gov_bioshock;
-#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_bioshock)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_NIGHTMARE)
-extern struct cpufreq_governor cpufreq_gov_nightmare;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_nightmare)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_ALUCARD)
-extern struct cpufreq_governor cpufreq_gov_alucard;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_alucard)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_CONSERVATIVEX)
-extern struct cpufreq_governor cpufreq_gov_conservativex;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_conservativex )
 #endif
 
 /*********************************************************************
@@ -507,5 +483,15 @@ static inline int cpufreq_generic_exit(struct cpufreq_policy *policy)
 	cpufreq_frequency_table_put_attr(policy->cpu);
 	return 0;
 }
+
+/*********************************************************************
+ *                         CPUFREQ STATS                             *
+ *********************************************************************/
+
+#ifdef CONFIG_CPU_FREQ_STAT
+void acct_update_power(struct task_struct *p, cputime_t cputime);
+#else
+static inline void acct_update_power(struct task_struct *p, cputime_t cputime) {}
+#endif
 
 #endif /* _LINUX_CPUFREQ_H */

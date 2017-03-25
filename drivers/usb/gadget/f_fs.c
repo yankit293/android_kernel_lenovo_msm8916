@@ -824,15 +824,28 @@ first_try:
 			}
 		}
 
-		buffer_len = !read ? len : round_up(len,
+		spin_lock_irq(&epfile->ffs->eps_lock);
+		/*
+		 * While we were acquiring lock endpoint got disabled
+		 * (disconnect) or changed (composition switch) ?
+		 */
+		if (epfile->ep == ep) {
+			buffer_len = !read ? len : round_up(len,
 						ep->ep->desc->wMaxPacketSize);
+		} else {
+			spin_unlock_irq(&epfile->ffs->eps_lock);
+			ret = -ENODEV;
+			goto error;
+		}
 
 		/* Do we halt? */
 		halt = !read == !epfile->in;
 		if (halt && epfile->isoc) {
+			spin_unlock_irq(&epfile->ffs->eps_lock);
 			ret = -EINVAL;
 			goto error;
 		}
+		spin_unlock_irq(&epfile->ffs->eps_lock);
 
 		/* Allocate & copy */
 		if (!halt && !data) {
@@ -893,11 +906,7 @@ first_try:
 
 		if (unlikely(ret < 0)) {
 			ret = -EIO;
-#if 1  //for cts testVideoSnapshot failed
-		} else if (unlikely(wait_for_completion_interruptible_timeout(done,10*HZ)<=0)) {
-#else
 		} else if (unlikely(wait_for_completion_interruptible(done))) {
-#endif
 			spin_lock_irq(&epfile->ffs->eps_lock);
 			/*
 			 * While we were acquiring lock endpoint got disabled

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,11 +19,13 @@
 #include <linux/sched.h>
 #include <linux/msm_audio_ion.h>
 #include <linux/delay.h>
+#include <linux/ratelimit.h>
 #include <sound/apr_audio-v2.h>
 #include <sound/q6afe-v2.h>
 #include <sound/q6audio-v2.h>
 #include "msm-pcm-routing-v2.h"
 #include <sound/audio_cal_utils.h>
+#include <sound/adsp_err.h>
 
 enum {
 	AFE_COMMON_RX_CAL = 0,
@@ -93,7 +95,7 @@ struct afe_ctl {
 	struct mutex afe_cmd_lock;
 };
 
-static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST - SLIMBUS_0_RX];
+static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST + 2 - SLIMBUS_0_RX];
 static unsigned long afe_configured_cmd;
 
 static struct afe_ctl this_afe;
@@ -428,36 +430,6 @@ int afe_q6_interface_prepare(void)
 	}
 	return ret;
 }
-
-#ifdef CONFIG_ARCH_MSM8916
-int msm8x16_quat_mi2s_clocks(bool enable)
-{
-	union afe_port_config port_config;
-	u16 port_id = AFE_PORT_ID_QUATERNARY_MI2S_RX;
-	int rc = 0;
-
-	if(enable) {
-		port_config.i2s.channel_mode = AFE_PORT_I2S_SD0;
-		port_config.i2s.mono_stereo = MSM_AFE_CH_STEREO;
-		port_config.i2s.bit_width = 16;
-		port_config.i2s.i2s_cfg_minor_version = AFE_API_VERSION_I2S_CONFIG;
-		port_config.i2s.sample_rate = 48000;
-		port_config.i2s.ws_src = 1;
-		rc = afe_port_start(port_id, &port_config, 48000);
-		if (IS_ERR_VALUE(rc)) {
-			pr_err("fail to open AFE port\n");
-			return -EINVAL;
-		}
-	} else {
-		rc = afe_close(port_id);
-		if (IS_ERR_VALUE(rc)) {
-			pr_err("fail to close AFE port\n");
-			return -EINVAL;
-		}
-	}
-	return rc;
-}
-#endif
 
 /*
  * afe_apr_send_pkt : returns 0 on success, negative otherwise.
@@ -1339,8 +1311,10 @@ int afe_port_set_mad_type(u16 port_id, enum afe_mad_type mad_type)
 		mad_type = MAD_SW_AUDIO;
 		return 0;
 	}
-
-	i = port_id - SLIMBUS_0_RX;
+	if (port_id == AFE_PORT_ID_QUATERNARY_MI2S_TX)
+		i = (SLIMBUS_PORT_LAST + 1) - SLIMBUS_0_RX;
+	else
+		i = port_id - SLIMBUS_0_RX;
 	if (i < 0 || i >= ARRAY_SIZE(afe_ports_mad_type)) {
 		pr_err("%s: Invalid port_id 0x%x\n", __func__, port_id);
 		return -EINVAL;
@@ -1355,8 +1329,10 @@ enum afe_mad_type afe_port_get_mad_type(u16 port_id)
 
 	if (port_id == AFE_PORT_ID_TERTIARY_MI2S_TX)
 		return MAD_SW_AUDIO;
-
-	i = port_id - SLIMBUS_0_RX;
+	if (port_id == AFE_PORT_ID_QUATERNARY_MI2S_TX)
+		i = (SLIMBUS_PORT_LAST + 1) - SLIMBUS_0_RX;
+	else
+		i = port_id - SLIMBUS_0_RX;
 	if (i < 0 || i >= ARRAY_SIZE(afe_ports_mad_type)) {
 		pr_debug("%s: Non Slimbus port_id 0x%x\n", __func__, port_id);
 		return MAD_HW_NONE;
@@ -1864,6 +1840,7 @@ int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		cfg_type = AFE_PARAM_ID_RT_PROXY_CONFIG;
 		break;
 	case INT_BT_SCO_RX:
+	case INT_BT_A2DP_RX:
 	case INT_BT_SCO_TX:
 	case INT_FM_RX:
 	case INT_FM_TX:
@@ -2543,8 +2520,9 @@ int q6afe_audio_client_buf_alloc_contiguous(unsigned int dir,
 	struct afe_audio_buffer *buf;
 	size_t len;
 
-	if (!(ac) || ((dir != IN) && (dir != OUT))) {
-		pr_err("%s: ac %p dir %d\n", __func__, ac, dir);
+	if (!(ac) || !(bufsz) || ((dir != IN) && (dir != OUT))) {
+		pr_err("%s: ac %pK bufsz %d dir %d\n", __func__, ac, bufsz,
+			dir);
 		return -EINVAL;
 	}
 
@@ -2642,6 +2620,7 @@ int afe_cmd_memory_map(phys_addr_t dma_addr_p, u32 dma_buf_sz)
 	struct afe_service_cmd_shared_mem_map_regions *mregion = NULL;
 	struct  afe_service_shared_map_region_payload *mregion_pl = NULL;
 	int index = 0;
+	static DEFINE_RATELIMIT_STATE(rl, HZ/2, 1);
 
 	pr_debug("%s:\n", __func__);
 
@@ -2650,7 +2629,9 @@ int afe_cmd_memory_map(phys_addr_t dma_addr_p, u32 dma_buf_sz)
 					0xFFFFFFFF, &this_afe);
 		pr_debug("%s: Register AFE\n", __func__);
 		if (this_afe.apr == NULL) {
-			pr_err("%s: Unable to register AFE\n", __func__);
+			if (__ratelimit(&rl))
+				pr_err("%s: Unable to register AFE\n",
+					__func__);
 			ret = -ENODEV;
 			return ret;
 		}
@@ -2697,8 +2678,9 @@ int afe_cmd_memory_map(phys_addr_t dma_addr_p, u32 dma_buf_sz)
 	this_afe.mmap_handle = 0;
 	ret = apr_send_pkt(this_afe.apr, (uint32_t *) mmap_region_cmd);
 	if (ret < 0) {
-		pr_err("%s: AFE memory map cmd failed %d\n",
-		       __func__, ret);
+		if (__ratelimit(&rl))
+			pr_err("%s: AFE memory map cmd failed %d\n",
+				__func__, ret);
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
@@ -2711,9 +2693,13 @@ int afe_cmd_memory_map(phys_addr_t dma_addr_p, u32 dma_buf_sz)
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	if (atomic_read(&this_afe.status) != 0) {
-		pr_err("%s: Memory map cmd failed\n", __func__);
-		ret = -EINVAL;
+	if (atomic_read(&this_afe.status) > 0) {
+		if (__ratelimit(&rl))
+			pr_err("%s: config cmd failed [%s]\n",
+				__func__, adsp_err_get_err_str(
+				atomic_read(&this_afe.status)));
+		ret = adsp_err_get_lnx_err_code(
+				atomic_read(&this_afe.status));
 		goto fail_cmd;
 	}
 
@@ -2721,7 +2707,8 @@ int afe_cmd_memory_map(phys_addr_t dma_addr_p, u32 dma_buf_sz)
 	return 0;
 fail_cmd:
 	kfree(mmap_region_cmd);
-	pr_err("%s: fail_cmd\n", __func__);
+	if (__ratelimit(&rl))
+		pr_err("%s: fail_cmd\n", __func__);
 	return ret;
 }
 
@@ -3800,6 +3787,113 @@ fail_cmd:
 	return ret;
 }
 
+int afe_set_lpass_clk_cfg(int index, struct afe_clk_set *cfg)
+{
+	struct afe_lpass_clk_config_command_v2 clk_cfg;
+	int ret = 0;
+
+	if (!cfg) {
+		pr_err("%s: clock cfg is NULL\n", __func__);
+		ret = -EINVAL;
+		return ret;
+	}
+
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: index[%d] invalid!\n", __func__, index);
+		return -EINVAL;
+	}
+
+	ret = afe_q6_interface_prepare();
+	if (ret != 0) {
+		pr_err("%s: Q6 interface prepare failed %d\n", __func__, ret);
+		return ret;
+	}
+
+	mutex_lock(&this_afe.afe_cmd_lock);
+	clk_cfg.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	clk_cfg.hdr.pkt_size = sizeof(clk_cfg);
+	clk_cfg.hdr.src_port = 0;
+	clk_cfg.hdr.dest_port = 0;
+	clk_cfg.hdr.token = index;
+
+	clk_cfg.hdr.opcode = AFE_SVC_CMD_SET_PARAM;
+	clk_cfg.param.payload_size = sizeof(clk_cfg) - sizeof(struct apr_hdr)
+						- sizeof(clk_cfg.param);
+	clk_cfg.param.payload_address_lsw = 0x00;
+	clk_cfg.param.payload_address_msw = 0x00;
+	clk_cfg.param.mem_map_handle = 0x00;
+	clk_cfg.pdata.module_id = AFE_MODULE_CLOCK_SET;
+	clk_cfg.pdata.param_id = AFE_PARAM_ID_CLOCK_SET;
+	clk_cfg.pdata.param_size =  sizeof(clk_cfg.clk_cfg);
+	clk_cfg.clk_cfg = *cfg;
+
+
+	pr_debug("%s: Minor version =0x%x clk id = %d\n"
+		 "clk freq (Hz) = %d, clk attri = 0x%x\n"
+		 "clk root = 0x%x clk enable = 0x%x\n",
+		 __func__, cfg->clk_set_minor_version,
+		 cfg->clk_id, cfg->clk_freq_in_hz, cfg->clk_attri,
+		 cfg->clk_root, cfg->enable);
+
+	atomic_set(&this_afe.state, 1);
+	atomic_set(&this_afe.status, 0);
+	ret = apr_send_pkt(this_afe.apr, (uint32_t *) &clk_cfg);
+	if (ret < 0) {
+		pr_err("%s: AFE clk cfg failed with ret %d\n",
+		       __func__, ret);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	ret = wait_event_timeout(this_afe.wait[index],
+			(atomic_read(&this_afe.state) == 0),
+			msecs_to_jiffies(TIMEOUT_MS));
+	if (!ret) {
+		pr_err("%s: wait_event timeout\n", __func__);
+		ret = -EINVAL;
+		goto fail_cmd;
+	} else {
+		/* set ret to 0 as no timeout happened */
+		ret = 0;
+	}
+	if (atomic_read(&this_afe.status) != 0) {
+		pr_err("%s: config cmd failed\n", __func__);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+fail_cmd:
+	mutex_unlock(&this_afe.afe_cmd_lock);
+	return ret;
+}
+
+int afe_set_lpass_clock_v2(u16 port_id, struct afe_clk_set *cfg)
+{
+	int index = 0;
+	int ret = 0;
+
+	index = q6audio_get_port_index(port_id);
+	if (index < 0 || index > AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		return -EINVAL;
+	}
+	ret = q6audio_is_digital_pcm_interface(port_id);
+	if (ret < 0) {
+		pr_err("%s: q6audio_is_digital_pcm_interface fail %d\n",
+			__func__, ret);
+		return -EINVAL;
+	}
+
+	ret = afe_set_lpass_clk_cfg(index, cfg);
+	if (ret)
+		pr_err("%s: afe_set_lpass_clk_cfg_v2 failed %d\n",
+			__func__, ret);
+
+	return ret;
+}
+
 int afe_set_lpass_internal_digital_codec_clock(u16 port_id,
 			struct afe_digital_clk_cfg *cfg)
 {
@@ -4102,6 +4196,7 @@ static int afe_set_cal(int32_t cal_type, size_t data_size,
 {
 	int				ret = 0;
 	int				cal_index;
+	static DEFINE_RATELIMIT_STATE(rl, HZ/2, 1);
 	pr_debug("%s:\n", __func__);
 
 	cal_index = get_cal_type_index(cal_type);
@@ -4115,8 +4210,9 @@ static int afe_set_cal(int32_t cal_type, size_t data_size,
 	ret = cal_utils_set_cal(data_size, data,
 		this_afe.cal_data[cal_index], 0, NULL);
 	if (ret < 0) {
-		pr_err("%s: cal_utils_set_cal failed, ret = %d, cal type = %d!\n",
-			__func__, ret, cal_type);
+		if (__ratelimit(&rl))
+			pr_err("%s: cal_utils_set_cal failed, ret = %d, cal type = %d!\n",
+				__func__, ret, cal_type);
 		ret = -EINVAL;
 		goto done;
 	}
@@ -4295,6 +4391,7 @@ static int afe_map_cal_data(int32_t cal_type,
 {
 	int ret = 0;
 	int cal_index;
+	static DEFINE_RATELIMIT_STATE(rl, HZ/2, 1);
 	pr_debug("%s:\n", __func__);
 
 	cal_index = get_cal_type_index(cal_type);
@@ -4311,9 +4408,10 @@ static int afe_map_cal_data(int32_t cal_type,
 			cal_block->map_data.map_size);
 	atomic_set(&this_afe.mem_map_cal_index, -1);
 	if (ret < 0) {
-		pr_err("%s: mmap did not work! size = %zd ret %d\n",
-			__func__,
-			cal_block->map_data.map_size, ret);
+		if (__ratelimit(&rl))
+			pr_err("%s: mmap did not work! size = %zd ret %d\n",
+				__func__,
+				cal_block->map_data.map_size, ret);
 		pr_debug("%s: mmap did not work! addr = 0x%pa, size = %zd\n",
 			__func__,
 			&cal_block->cal_data.paddr,

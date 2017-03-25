@@ -520,6 +520,7 @@ static int context_alloc(struct fastrpc_apps *me, uint32_t kernel,
 		goto bail;
 
 	INIT_HLIST_NODE(&ctx->hn);
+    hlist_add_fake(&ctx->hn);
 	ctx->apps = me;
 	ctx->fdata = fdata;
 	ctx->pra = (remote_arg_t *)(&ctx[1]);
@@ -718,7 +719,8 @@ static int get_page_list(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	pgstart->size = obuf->size;
 	for (i = 0; i < inbufs + outbufs; ++i) {
 		void *buf;
-		int len, num;
+		int num;
+		ssize_t len;
 
 		list[i].num = 0;
 		list[i].pgidx = 0;

@@ -104,17 +104,13 @@ enum msm_usb_phy_type {
 	SNPS_FEMTO_PHY,
 };
 
-#ifdef  WT_USE_86519_CHARGE_1200
-#define IDEV_CHG_MAX	1200
-#else
-#define IDEV_CHG_MAX	1500   //Other_platform_modify 20151124 huangfusheng.wt solve set current err in lenovo ltr test     
-#endif
-
+#define IDEV_CHG_MAX	1500
 #define IDEV_CHG_MIN	500
 #define IUNIT		100
 
 #define IDEV_ACA_CHG_MAX	1500
 #define IDEV_ACA_CHG_LIMIT	500
+#define IDEV_HVDCP_CHG_MAX	1800
 
 /**
  * Different states involved in USB charger detection.
@@ -218,6 +214,14 @@ enum usb_ctrl {
 	CI_CTRL,	/* ChipIdea controller */
 	HSIC_CTRL,	/* HSIC controller */
 	NUM_CTRL,
+};
+
+/**
+ * USB ID state
+ */
+enum usb_id_state {
+	USB_ID_GROUND = 0,
+	USB_ID_FLOAT,
 };
 
 /**
@@ -424,6 +428,7 @@ struct msm_otg_platform_data {
  * @dbg_idx: Dynamic debug buffer Index.
  * @dbg_lock: Dynamic debug buffer Lock.
  * @buf: Dynamic Debug Buffer.
+ * @id_state: Indicates USBID line status.
  */
 struct msm_otg {
 	struct usb_phy phy;
@@ -564,6 +569,7 @@ struct msm_otg {
 	struct qpnp_vadc_chip	*vadc_dev;
 	int ext_id_irq;
 	bool phy_irq_pending;
+	bool rm_pulldown;
 	wait_queue_head_t	host_suspend_wait;
 /* Maximum debug message length */
 #define DEBUG_MSG_LEN   128UL
@@ -572,6 +578,7 @@ struct msm_otg {
 	unsigned int dbg_idx;
 	rwlock_t dbg_lock;
 	char (buf[DEBUG_MAX_MSG])[DEBUG_MSG_LEN];   /* buffer */
+	enum usb_id_state id_state;
 };
 
 struct ci13xxx_platform_data {

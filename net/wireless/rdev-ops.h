@@ -177,11 +177,12 @@ static inline int rdev_add_station(struct cfg80211_registered_device *rdev,
 }
 
 static inline int rdev_del_station(struct cfg80211_registered_device *rdev,
-				   struct net_device *dev, u8 *mac)
+				   struct net_device *dev,
+				   struct station_del_parameters *params)
 {
 	int ret;
-	trace_rdev_del_station(&rdev->wiphy, dev, mac);
-	ret = rdev->ops->del_station(&rdev->wiphy, dev, mac);
+	trace_rdev_del_station(&rdev->wiphy, dev, params);
+	ret = rdev->ops->del_station(&rdev->wiphy, dev, params);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
@@ -948,19 +949,6 @@ rdev_set_ap_chanwidth(struct cfg80211_registered_device *rdev,
 
 	trace_rdev_set_ap_chanwidth(&rdev->wiphy, dev, chandef);
 	ret = rdev->ops->set_ap_chanwidth(&rdev->wiphy, dev, chandef);
-	trace_rdev_return_int(&rdev->wiphy, ret);
-
-	return ret;
-}
-
-static inline int rdev_key_mgmt_set_pmk(struct cfg80211_registered_device *rdev,
-				   struct net_device *dev, u8 *pmk,
-				   size_t pmk_len)
-{
-	int ret;
-
-	trace_rdev_key_mgmt_set_pmk(&rdev->wiphy, dev, pmk);
-	ret = rdev->ops->key_mgmt_set_pmk(&rdev->wiphy, dev, pmk, pmk_len);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 
 	return ret;

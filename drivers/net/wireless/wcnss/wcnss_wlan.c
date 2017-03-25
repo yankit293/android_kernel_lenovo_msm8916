@@ -1122,6 +1122,25 @@ void wcnss_reset_intr(void)
 }
 EXPORT_SYMBOL(wcnss_reset_intr);
 
+void wcnss_reset_fiq(bool clk_chk_en)
+{
+	if (wcnss_hardware_type() == WCNSS_PRONTO_HW) {
+		if (clk_chk_en) {
+			wcnss_log_debug_regs_on_bite();
+		} else {
+			wcnss_pronto_log_debug_regs();
+			if (wcnss_get_mux_control())
+				wcnss_log_iris_regs();
+		}
+		/* Insert memory barrier before writing fiq register */
+		wmb();
+		__raw_writel(1 << 16, penv->fiq_reg);
+	} else {
+		wcnss_riva_log_debug_regs();
+	}
+}
+EXPORT_SYMBOL(wcnss_reset_fiq);
+
 static int wcnss_create_sysfs(struct device *dev)
 {
 	int ret;
@@ -3056,6 +3075,40 @@ fail_gpio_res:
 	return ret;
 }
 
+/* wlan prop driver cannot invoke cancel_work_sync
+ * function directly, so to invoke this function it
+ * call wcnss_flush_work function
+ */
+void wcnss_flush_work(struct work_struct *work)
+{
+	struct work_struct *cnss_work = work;
+	if (cnss_work != NULL)
+		cancel_work_sync(cnss_work);
+}
+EXPORT_SYMBOL(wcnss_flush_work);
+
+/* wlan prop driver cannot invoke show_stack
+ * function directly, so to invoke this function it
+ * call wcnss_dump_stack function
+ */
+void wcnss_dump_stack(struct task_struct *task)
+{
+	show_stack(task, NULL);
+}
+EXPORT_SYMBOL(wcnss_dump_stack);
+
+/* wlan prop driver cannot invoke cancel_delayed_work_sync
+ * function directly, so to invoke this function it call
+ * wcnss_flush_delayed_work function
+ */
+void wcnss_flush_delayed_work(struct delayed_work *dwork)
+{
+	struct delayed_work *cnss_dwork = dwork;
+	if (cnss_dwork != NULL)
+		cancel_delayed_work_sync(cnss_dwork);
+}
+EXPORT_SYMBOL(wcnss_flush_delayed_work);
+
 static int wcnss_node_open(struct inode *inode, struct file *file)
 {
 	struct platform_device *pdev;
@@ -3153,7 +3206,7 @@ static ssize_t wcnss_wlan_write(struct file *fp, const char __user
 		return -EFAULT;
 
 	if ((UINT32_MAX - count < penv->user_cal_rcvd) ||
-	     MAX_CALIBRATED_DATA_SIZE < count + penv->user_cal_rcvd) {
+		(penv->user_cal_exp_size < count + penv->user_cal_rcvd)) {
 		pr_err(DEVICE " invalid size to write %zu\n", count +
 				penv->user_cal_rcvd);
 		rc = -ENOMEM;
@@ -3208,6 +3261,7 @@ static int wcnss_notif_cb(struct notifier_block *this, unsigned long code,
 		wcnss_disable_pc_add_req();
 		schedule_delayed_work(&penv->wcnss_pm_qos_del_req,
 				msecs_to_jiffies(WCNSS_PM_QOS_TIMEOUT));
+		penv->is_shutdown = 1;
 		wcnss_log_debug_regs_on_bite();
 	} else if (code == SUBSYS_POWERUP_FAILURE) {
 		if (pdev && pwlanconfig)

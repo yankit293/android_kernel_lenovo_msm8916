@@ -164,9 +164,10 @@ static ssize_t sps_set_info(struct file *file, const char __user *buf,
 	int i;
 	u32 buf_size_kb = 0;
 	u32 new_buf_size;
+	u32 size = sizeof(str) < count ? sizeof(str) : count;
 
 	memset(str, 0, sizeof(str));
-	missing = copy_from_user(str, buf, sizeof(str));
+	missing = copy_from_user(str, buf, size);
 	if (missing)
 		return -EFAULT;
 
@@ -254,9 +255,10 @@ static ssize_t sps_set_logging_option(struct file *file, const char __user *buf,
 	char str[MAX_MSG_LEN];
 	int i;
 	u8 option = 0;
+	u32 size = sizeof(str) < count ? sizeof(str) : count;
 
 	memset(str, 0, sizeof(str));
-	missing = copy_from_user(str, buf, sizeof(str));
+	missing = copy_from_user(str, buf, size);
 	if (missing)
 		return -EFAULT;
 
@@ -303,9 +305,10 @@ static ssize_t sps_set_bam_addr(struct file *file, const char __user *buf,
 	struct sps_bam *bam;
 	u32 num_pipes = 0;
 	void *vir_addr;
+	u32 size = sizeof(str) < count ? sizeof(str) : count;
 
 	memset(str, 0, sizeof(str));
-	missing = copy_from_user(str, buf, sizeof(str));
+	missing = copy_from_user(str, buf, size);
 	if (missing)
 		return -EFAULT;
 
@@ -2196,6 +2199,7 @@ EXPORT_SYMBOL(sps_register_bam_device);
 int sps_deregister_bam_device(unsigned long dev_handle)
 {
 	struct sps_bam *bam;
+	int n;
 
 	SPS_DBG2("sps:%s.", __func__);
 
@@ -2211,6 +2215,12 @@ int sps_deregister_bam_device(unsigned long dev_handle)
 	}
 
 	SPS_DBG2("sps:SPS deregister BAM: phys %pa.", &bam->props.phys_addr);
+
+	if (bam->props.options & SPS_BAM_HOLD_MEM) {
+		for (n = 0; n < BAM_MAX_PIPES; n++)
+			if (bam->desc_cache_pointers[n] != NULL)
+				kfree(bam->desc_cache_pointers[n]);
+	}
 
 	/* If this BAM is attached to a BAM-DMA, init the BAM-DMA device */
 #ifdef CONFIG_SPS_SUPPORT_BAMDMA
@@ -2339,75 +2349,6 @@ int sps_pipe_reset(unsigned long dev, u32 pipe)
 	return 0;
 }
 EXPORT_SYMBOL(sps_pipe_reset);
-
-/*
- * Disable a BAM pipe
- */
-int sps_pipe_disable(unsigned long dev, u32 pipe)
-{
-	struct sps_bam *bam;
-
-	SPS_DBG("sps:%s.", __func__);
-
-	if (!dev) {
-		SPS_ERR("sps:%s:BAM handle is NULL.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	if (pipe >= BAM_MAX_PIPES) {
-		SPS_ERR("sps:%s:pipe index is invalid.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	bam = sps_h2bam(dev);
-	if (bam == NULL) {
-		SPS_ERR("sps:%s:BAM is not found by handle.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	bam_disable_pipe(&bam->base, pipe);
-
-	return 0;
-}
-EXPORT_SYMBOL(sps_pipe_disable);
-
-/*
- * Check pending descriptors in the descriptor FIFO
- * of a pipe
- */
-int sps_pipe_pending_desc(unsigned long dev, u32 pipe, bool *pending)
-{
-
-	struct sps_bam *bam;
-
-	SPS_DBG("sps:%s.", __func__);
-
-	if (!dev) {
-		SPS_ERR("sps:%s:BAM handle is NULL.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	if (pipe >= BAM_MAX_PIPES) {
-		SPS_ERR("sps:%s:pipe index is invalid.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	if (!pending) {
-		SPS_ERR("sps:%s:input flag is NULL.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	bam = sps_h2bam(dev);
-	if (bam == NULL) {
-		SPS_ERR("sps:%s:BAM is not found by handle.\n", __func__);
-		return SPS_ERROR;
-	}
-
-	*pending = sps_bam_pipe_pending_desc(bam, pipe);
-
-	return 0;
-}
-EXPORT_SYMBOL(sps_pipe_pending_desc);
 
 /*
  * Process any pending IRQ of a BAM

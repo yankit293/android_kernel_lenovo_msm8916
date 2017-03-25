@@ -188,7 +188,7 @@ static long msm_eeprom_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_eeprom_ctrl_t *e_ctrl = v4l2_get_subdevdata(sd);
 	void __user *argp = (void __user *)arg;
 	CDBG("%s E\n", __func__);
-	CDBG("%s:%d a_ctrl %p argp %p\n", __func__, __LINE__, e_ctrl, argp);
+	CDBG("%s:%d a_ctrl %pK argp %pK\n", __func__, __LINE__, e_ctrl, argp);
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_GET_SUBDEV_ID:
 		return msm_eeprom_get_subdev_id(e_ctrl, argp);
@@ -384,14 +384,15 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			}
 		}
 
-		if (emap[j].mem.valid_size) {//add for hi545
+		if (emap[j].mem.valid_size) {
+			//add for hi545
 			if (strcmp(eb_info->eeprom_name, "wingtech_hi545") == 0) {
 				rc = custom_hynix_define_otp_read(e_ctrl, &emap[j], memptr);
 			} else {
 				e_ctrl->i2c_client.addr_type = emap[j].mem.addr_t;
 				rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(
-						&(e_ctrl->i2c_client), emap[j].mem.addr,
-						memptr, emap[j].mem.valid_size);
+					&(e_ctrl->i2c_client), emap[j].mem.addr,
+					memptr, emap[j].mem.valid_size);
 				if (rc < 0) {
 					pr_err("%s: read failed\n", __func__);
 					return rc;
@@ -959,7 +960,7 @@ static long msm_eeprom_subdev_ioctl32(struct v4l2_subdev *sd,
 	void __user *argp = (void __user *)arg;
 
 	CDBG("%s E\n", __func__);
-	CDBG("%s:%d a_ctrl %p argp %p\n", __func__, __LINE__, e_ctrl, argp);
+	CDBG("%s:%d a_ctrl %pK argp %pK\n", __func__, __LINE__, e_ctrl, argp);
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_GET_SUBDEV_ID:
 		return msm_eeprom_get_subdev_id(e_ctrl, argp);

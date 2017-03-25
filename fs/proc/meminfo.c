@@ -29,7 +29,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	long cached;
 	unsigned long pages[NR_LRU_LISTS];
 	int lru;
-	
+
 /*
  * display in kilobytes.
  */
@@ -107,9 +107,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #endif
 		,
 		K(i.totalram),
-		K(i.freeram) + 50*1024,
+		K(i.freeram),
 		K(i.bufferram),
-		K(cached) + 50*1024,
+		K(cached),
 		K(total_swapcache_pages()),
 		K(pages[LRU_ACTIVE_ANON]   + pages[LRU_ACTIVE_FILE]),
 		K(pages[LRU_INACTIVE_ANON] + pages[LRU_INACTIVE_FILE]),

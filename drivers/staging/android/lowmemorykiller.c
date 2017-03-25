@@ -83,6 +83,8 @@ static unsigned long lowmem_deathpending_timeout;
 
 static atomic_t shift_adj = ATOMIC_INIT(0);
 static short adj_max_shift = 353;
+module_param_named(adj_max_shift, adj_max_shift, short,
+	S_IRUGO | S_IWUSR);
 
 /* User knob to enable/disable adaptive lmk feature */
 static int enable_adaptive_lmk;
@@ -182,16 +184,16 @@ static struct notifier_block lmk_vmpr_nb = {
 
 static int test_task_flag(struct task_struct *p, int flag)
 {
-	struct task_struct *t = p;
+	struct task_struct *t;
 
-	do {
+	for_each_thread(p, t) {
 		task_lock(t);
 		if (test_tsk_thread_flag(t, flag)) {
 			task_unlock(t);
 			return 1;
 		}
 		task_unlock(t);
-	} while_each_thread(p, t);
+	}
 
 	return 0;
 }

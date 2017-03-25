@@ -450,7 +450,6 @@ static void qcrypto_ce_set_bus(struct crypto_engine *pengine,
 	int ret = 0;
 
 	if (high_bw_req) {
-		pm_stay_awake(&pengine->pdev->dev);
 		ret = qce_enable_clk(pengine->qce);
 		if (ret) {
 			pr_err("%s Unable enable clk\n", __func__);
@@ -464,10 +463,7 @@ static void qcrypto_ce_set_bus(struct crypto_engine *pengine,
 			qce_disable_clk(pengine->qce);
 			goto clk_err;
 		}
-
-
 	} else {
-
 		ret = msm_bus_scale_client_update_request(
 				pengine->bus_scale_handle, 0);
 		if (ret) {
@@ -485,11 +481,8 @@ static void qcrypto_ce_set_bus(struct crypto_engine *pengine,
 						__func__);
 			goto clk_err;
 		}
-		pm_relax(&pengine->pdev->dev);
 	}
-	return;
 clk_err:
-	pm_relax(&pengine->pdev->dev);
 	return;
 
 }
@@ -1051,7 +1044,6 @@ static void _qcrypto_remove_engine(struct crypto_engine *pengine)
 	cancel_work_sync(&pengine->bw_reaper_ws);
 	cancel_work_sync(&pengine->bw_allocate_ws);
 	del_timer_sync(&pengine->bw_reaper_timer);
-	device_init_wakeup(&pengine->pdev->dev, false);
 
 	if (pengine->bus_scale_handle != 0)
 		msm_bus_scale_unregister_client(pengine->bus_scale_handle);
@@ -1256,6 +1248,7 @@ static void _qcrypto_tfm_complete(struct crypto_priv *cp, u32 type,
 	struct qcrypto_resp_ctx *arsp;
 	struct list_head *plist;
 	struct crypto_async_request *areq;
+	bool pending_list;
 
 	switch (type) {
 	case CRYPTO_ALG_TYPE_AHASH:
@@ -1271,6 +1264,7 @@ again:
 	spin_lock_irqsave(&cp->lock, flags);
 	if (list_empty(plist)) {
 		arsp = NULL; /* nothing to do */
+		pending_list = false;
 	} else {
 		arsp = list_first_entry(plist,
 				struct  qcrypto_resp_ctx, list);
@@ -1278,12 +1272,17 @@ again:
 			arsp = NULL;  /* still in progress */
 		else
 			list_del(&arsp->list); /* request is complete */
+		if (list_empty(plist))
+			pending_list = false;
+		else
+			pending_list = true;
 	}
 	spin_unlock_irqrestore(&cp->lock, flags);
 	if (arsp) {
 		areq = arsp->async_req;
 		areq->complete(areq, arsp->res);
-		goto again;
+		if (pending_list)
+			goto again;
 	}
 }
 
@@ -1878,12 +1877,12 @@ static int _qcrypto_process_aead(struct  crypto_engine *pengine,
 			 * include  assoicated data, ciphering data stream,
 			 * generated MAC, and CCM padding.
 			 */
-			if ((MAX_ALIGN_SIZE * 2 > ULONG_MAX - req->assoclen) ||
+			if ((MAX_ALIGN_SIZE * 2 > UINT_MAX - req->assoclen) ||
 				((MAX_ALIGN_SIZE * 2 + req->assoclen) >
-						ULONG_MAX - qreq.ivsize) ||
+						UINT_MAX - qreq.ivsize) ||
 				((MAX_ALIGN_SIZE * 2 + req->assoclen
 					+ qreq.ivsize)
-						> ULONG_MAX - req->cryptlen)) {
+						> UINT_MAX - req->cryptlen)) {
 				pr_err("Integer overflow on aead req length.\n");
 				return -EINVAL;
 			}
@@ -4506,7 +4505,6 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	pengine->active_seq = 0;
 	pengine->last_active_seq = 0;
 	pengine->check_flag = false;
-	device_init_wakeup(&pengine->pdev->dev, true);
 
 	tasklet_init(&pengine->done_tasklet, req_done, (unsigned long)pengine);
 	crypto_init_queue(&pengine->req_queue, MSM_QCRYPTO_REQ_QUEUE_LENGTH);

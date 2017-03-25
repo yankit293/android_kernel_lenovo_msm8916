@@ -117,7 +117,8 @@ const char *hw_platform_subtype[] = {
 	[PLATFORM_SUBTYPE_UNKNOWN] = "Unknown",
 	[PLATFORM_SUBTYPE_CHARM] = "charm",
 	[PLATFORM_SUBTYPE_STRANGE] = "strange",
-	[PLATFORM_SUBTYPE_STRANGE_2A] = "strange_2a,"
+	[PLATFORM_SUBTYPE_STRANGE_2A] = "strange_2a",
+	[PLATFORM_SUBTYPE_INVALID] = "Invalid",
 };
 
 /* Used to parse shared memory.  Must match the modem. */
@@ -481,6 +482,8 @@ static struct msm_soc_info cpu_of_id[] = {
 	[260] = {MSM_CPU_8909, "MDMFERRUM"},
 	[261] = {MSM_CPU_8909, "MDMFERRUM"},
 	[262] = {MSM_CPU_8909, "MDMFERRUM"},
+	[300] = {MSM_CPU_8909, "MSM8909W"},
+	[301] = {MSM_CPU_8909, "APQ8009W"},
 
 	/* ZIRC IDs */
 	[234] = {MSM_CPU_ZIRC, "MSMZIRC"},
@@ -728,10 +731,14 @@ msm_get_platform_subtype(struct device *dev,
 		}
 		return snprintf(buf, PAGE_SIZE, "%-.32s\n",
 					qrd_hw_platform_subtype[hw_subtype]);
+	} else {
+		if (hw_subtype >= PLATFORM_SUBTYPE_INVALID) {
+			pr_err("Invalid hardware platform subtype\n");
+			hw_subtype = PLATFORM_SUBTYPE_INVALID;
+		}
+		return snprintf(buf, PAGE_SIZE, "%-.32s\n",
+			hw_platform_subtype[hw_subtype]);
 	}
-
-	return snprintf(buf, PAGE_SIZE, "%-.32s\n",
-		hw_platform_subtype[hw_subtype]);
 }
 
 static ssize_t

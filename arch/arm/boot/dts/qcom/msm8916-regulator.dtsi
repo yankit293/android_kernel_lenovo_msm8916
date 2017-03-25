@@ -53,7 +53,7 @@
 		regulator-max-microvolt = <9>;
 
 		qcom,cpr-voltage-ceiling = <1050000 1150000 1350000>;
-		qcom,cpr-voltage-floor = <1050000 1150000 1275000>;
+		qcom,cpr-voltage-floor = <1050000 1050000 1162500>;
 		vdd-apc-supply = <&pm8916_s2>;
 
 		qcom,vdd-mx-corner-map = <4 5 7>;
@@ -103,7 +103,9 @@
 		qcom,cpr-speed-bin-max-corners =
 					<0 0 2 4 8>,
 					<0 1 2 4 7>,
-					<2 0 2 4 9>;
+					<2 0 2 4 9>,
+					<3 0 2 4 5>,
+					<3 1 2 4 5>;
 		qcom,cpr-quot-adjust-scaling-factor-max = <650>;
 		qcom,cpr-enable;
 	};
@@ -304,8 +306,8 @@
 		status = "okay";
 		pm8916_l11: regulator-l11 {
 			regulator-min-microvolt = <1800000>;
-			regulator-max-microvolt = <3300000>;//bug289089,shenyong.wt,2014.12.25,config vdd max 3.3v
-			qcom,init-voltage = <3000000>;//bug289089,shenyong.wt,2014,12,25config vdd(default) 3.0v
+			regulator-max-microvolt = <2950000>;
+			qcom,init-voltage = <1800000>;
 			status = "okay";
 		};
 	};

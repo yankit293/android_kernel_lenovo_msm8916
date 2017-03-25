@@ -25,8 +25,6 @@
 #include <linux/log2.h>
 #include <linux/qpnp/power-on.h>
 
-#include <linux/hardware_info.h>
-
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
 #define PON_MASK(MSB_BIT, LSB_BIT) \
@@ -1475,35 +1473,6 @@ static void qpnp_pon_debugfs_remove(struct spmi_device *spmi)
 {}
 #endif
 
-//Other_SYS, heming.wt, add board id info into lk, 2014/12/03, begin
-void probe_board_and_set(void)
-{
-	char* boadrid_start, *boardvol_start;
-  char boardid_info[HARDWARE_MAX_ITEM_LONGTH];
-  
-	boadrid_start = strstr(saved_command_line,"board_id=");
-	boardvol_start = strstr(saved_command_line,"board_vol=");
-	memset(boardid_info, 0, HARDWARE_MAX_ITEM_LONGTH);
-	if(boadrid_start != NULL)
-	{
-		boardvol_start = strstr(boadrid_start,":board_vol=");
-		if(boardvol_start != NULL)
-		{
-			strncpy(boardid_info, boadrid_start+sizeof("board_id=")-1, boardvol_start-(boadrid_start+sizeof("board_id=")-1));//skip the header "board_id="
-		}
-		else
-		{
-			strncpy(boardid_info, boadrid_start+sizeof("board_id=")-1, 8);//skip the header "board_id="
-		}
-	}
-	else
-	{
-		sprintf(boardid_info, "boarid not define!");
-	}
-	hardwareinfo_set_prop(HARDWARE_BOARD_ID, boardid_info);
-}
-//Other_SYS, heming.wt, add board id info into lk, 2014/12/03, end
-
 static int qpnp_pon_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pon *pon;
@@ -1716,11 +1685,6 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 					"qcom,store-hard-reset-reason");
 
 	qpnp_pon_debugfs_init(spmi);
-
-//Other_SYS, heming.wt, add board id info into lk, 2014/12/03, begin	
-	probe_board_and_set();
-//Other_SYS, heming.wt, add board id info into lk, 2014/12/03, end
-		
 	return rc;
 }
 

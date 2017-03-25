@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -477,7 +477,7 @@
 		interrupts = <0 145 0 0 146 0>;
 		interrupt-names = "wcnss_wlantx_irq", "wcnss_wlanrx_irq";
 
-		qcom,pronto-vddmx-supply = <&pm8916_l3>;
+		qcom,pronto-vddmx-supply = <&pm8916_l3_corner_ao>;
 		qcom,pronto-vddcx-supply = <&pm8916_s2_corner>;
 		qcom,pronto-vddpx-supply = <&pm8916_l7>;
 		qcom,iris-vddxo-supply   = <&pm8916_l7>;
@@ -586,6 +586,7 @@
 		interrupt-names = "slimbus_irq", "slimbus_bam_irq";
 		qcom,apps-ch-pipes = <0x600000>;
 		qcom,ea-pc = <0x140>;
+		qcom,subsys-name = "modem";
 		status = "disabled";
 	};
 
@@ -1136,7 +1137,7 @@
 			 <&clock_gcc clk_gcc_sdcc2_apps_clk>;
 		clock-names = "iface_clk", "core_clk";
 
-		qcom,clk-rates = <400000 25000000 50000000 100000000 177770000>;
+		qcom,clk-rates = <400000 25000000 50000000 100000000 200000000>;
 
 		status = "disabled";
 	};

@@ -487,19 +487,6 @@ config TOUCHSCREEN_EDT_FT5X06
 	  To compile this driver as a module, choose M here: the
 	  module will be called edt-ft5x06.
 
-config TOUCHSCREEN_GSL1688E
-	tristate "SLIEAD GSL1688E I2C Touchscreen support"
-	depends on I2C
-	help
-	  Say Y here if you have an EDT "Polytouch" touchscreen based
-	  on the SLIEAD GSL1688E family of controllers connected to
-	  your system.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called gsl1688e.
-
 config TOUCHSCREEN_MIGOR
 	tristate "Renesas MIGO-R touchscreen"
 	depends on SH_MIGOR && I2C
@@ -1075,21 +1062,16 @@ config INPUT_MT_WRAPPER
 
 	  If unsure, say N.
 
-config TOUCHSCREEN_SWEEP2WAKE
-         tristate "Sweep2Wake for touchscreens"
-         select TOUCHSCREEN_PREVENT_SLEEP
-         default n
- 
-config TOUCHSCREEN_DOUBLETAP2WAKE
- 	tristate "DoubleTap2Wake for touchscreens"
- 	select TOUCHSCREEN_PREVENT_SLEEP
- 	default n
- 
-config TOUCHSCREEN_PREVENT_SLEEP
- 	bool "Inihibit sleep on modified touchscreen drivers"
- 	default n
- 	help
- 	  This disables the sleep function of modified touchscreen drivers.
- 
+config TOUCHSCREEN_IT7260_I2C
+	tristate "IT7260 Touchscreen Driver"
+	depends on I2C
+	help
+	  Say Y here if you have a IT7260 Touchscreen Driver
+	  connected to your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called it7258_ts_i2c.
 
 endif

@@ -37,12 +37,18 @@
 #define OVERTEMP_ON_IRQ				BIT(4)
 #define BAT_TEMP_OK_IRQ                         BIT(1)
 #define BATT_PRES_IRQ                           BIT(0)
-#define USB_CHG_PTH_STS				0x09
 
 /* USB CHARGER PATH peripheral register offsets */
 #define USB_IN_VALID_MASK			BIT(1)
+#define CHG_GONE_BIT				BIT(2)
 #define USB_SUSP_REG				0x47
 #define USB_SUSPEND_BIT				BIT(0)
+#define USB_COMP_OVR1_REG			0xEA
+#define USBIN_LLIMIT_OK_MASK			LBC_MASK(1, 0)
+#define USBIN_LLIMIT_OK_NO_OVERRIDE		0x00
+#define USBIN_LLIMIT_OK_OVERRIDE_1		0x03
+#define USB_OVP_TST5_REG			0xE7
+#define CHG_GONE_OK_EN_BIT			BIT(2)
 
 /* CHARGER peripheral register offset */
 #define CHG_OPTION_REG				0x08
@@ -72,6 +78,8 @@
 #define CHG_PERPH_RESET_CTRL3_REG		0xDA
 #define CHG_COMP_OVR1				0xEE
 #define CHG_VBAT_DET_OVR_MASK			LBC_MASK(1, 0)
+#define CHG_TEST_LOOP_REG			0xE5
+#define VIN_MIN_LOOP_DISABLE_BIT		BIT(0)
 #define OVERRIDE_0				0x2
 #define OVERRIDE_NONE				0x0
 
@@ -148,6 +156,7 @@ enum {
 	CURRENT = BIT(2),
 	SOC	= BIT(3),
 	PARALLEL = BIT(4),
+	COLLAPSE = BIT(5),
 };
 
 enum bpd_type {
@@ -192,7 +201,6 @@ static enum power_supply_property msm_batt_power_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
-	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
@@ -274,6 +282,7 @@ struct vddtrim_map vddtrim_map[] = {
  * @cfg_charger_detect_eoc:	charger can detect end of charging
  * @cfg_disable_vbatdet_based_recharge:	keep VBATDET comparator overriden to
  *				low and VBATDET irq disabled.
+ * @cfg_collapsible_chgr_support: support collapsible charger
  * @cfg_chgr_led_support:	support charger led work.
  * @cfg_safe_current:		battery safety current setting
  * @cfg_hot_batt_p:		hot battery threshold setting
@@ -326,6 +335,7 @@ struct qpnp_lbc_chip {
 	bool				fastchg_on;
 	bool				cfg_use_external_charger;
 	bool				cfg_chgr_led_support;
+	bool				non_collapsible_chgr_detected;
 	unsigned int			cfg_warm_bat_chg_ma;
 	unsigned int			cfg_cool_bat_chg_ma;
 	unsigned int			cfg_safe_voltage_mv;
@@ -334,6 +344,7 @@ struct qpnp_lbc_chip {
 	unsigned int			cfg_charger_detect_eoc;
 	unsigned int			cfg_disable_vbatdet_based_recharge;
 	unsigned int			cfg_batt_weak_voltage_uv;
+	unsigned int			cfg_collapsible_chgr_support;
 	unsigned int			cfg_warm_bat_mv;
 	unsigned int			cfg_cool_bat_mv;
 	unsigned int			cfg_hot_batt_p;
@@ -356,7 +367,7 @@ struct qpnp_lbc_chip {
 	int				usb_psy_ma;
 	int				delta_vddmax_uv;
 	int				init_trim_uv;
-	int                             chg_voltage;
+	struct delayed_work		collapsible_detection_work;
 
 	/* parallel-chg params */
 	int				parallel_charging_enabled;
@@ -364,9 +375,7 @@ struct qpnp_lbc_chip {
 	int				ichg_now;
 
 	struct alarm			vddtrim_alarm;
-	struct alarm			batt_temp_alarm;
 	struct work_struct		vddtrim_work;
-	struct work_struct		batt_temp_work;
 	struct qpnp_lbc_irq		irqs[MAX_IRQS];
 	struct mutex			jeita_configure_lock;
 	struct mutex			chg_enable_lock;
@@ -602,9 +611,10 @@ static u8 qpnp_lbc_get_trim_val(struct qpnp_lbc_chip *chip)
 					return vddtrim_map[i + 1].trim_val;
 			}
 		}
+		i = 0;
 		break;
 	case 1:
-		for (i = TRIM_CENTER; i <= 7; i++) {
+		for (i = TRIM_CENTER; i < ARRAY_SIZE(vddtrim_map); i++) {
 			if (vddtrim_map[i].trim_uv < chip->delta_vddmax_uv) {
 				delta_uv = AVG(vddtrim_map[i].trim_uv,
 						vddtrim_map[i - 1].trim_uv);
@@ -614,6 +624,7 @@ static u8 qpnp_lbc_get_trim_val(struct qpnp_lbc_chip *chip)
 					return vddtrim_map[i].trim_val;
 			}
 		}
+		i = ARRAY_SIZE(vddtrim_map) - 1;
 		break;
 	}
 
@@ -638,21 +649,24 @@ static int qpnp_lbc_is_usb_chg_plugged_in(struct qpnp_lbc_chip *chip)
 	return (usbin_valid_rt_sts & USB_IN_VALID_MASK) ? 1 : 0;
 }
 
-//+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-#if defined (WT_USE_FAN54015)
+static int qpnp_lbc_is_chg_gone(struct qpnp_lbc_chip *chip)
+{
+	u8 rt_sts;
+	int rc;
 
-    
-extern void fan54015_USB_startcharging(void);
-extern void  fan54015_TA_startcharging(void); 
-extern void  fan54015_stopcharging(void);
-extern int fan54015_getcharge_stat(void);
-extern  bool IsUsbPlugIn,IsTAPlugIn,TrunOnChg,IsChargingOn,ResetFan54015,ChgrCFGchanged,VbusValid,OTGturnOn;
-extern  int Fan54015Voreg,Fan54015Iochg,fan_54015_batt_current,fan_54015_batt_ocv;
-extern uint   BattSOC,BattVol;
-extern int BattTemp;
-extern struct work_struct chg_fast_work;  
-#endif
-//-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
+	rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + INT_RT_STS_REG,
+				&rt_sts, 1);
+	if (rc) {
+		pr_err("spmi read failed: addr=0x%04x, rc=%d\n",
+				chip->usb_chgpth_base + INT_RT_STS_REG, rc);
+		return rc;
+	}
+
+	pr_debug("rt_sts 0x%x\n", rt_sts);
+
+	return (rt_sts & CHG_GONE_BIT) ? 1 : 0;
+}
+
 static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 					int enable)
 {
@@ -671,21 +685,8 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 		goto skip;
 
 	reg_val = !!disabled ? CHG_FORCE_BATT_ON : CHG_ENABLE;
-
-       //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-       #if defined (WT_USE_FAN54015)   
-          if(reg_val==CHG_FORCE_BATT_ON)
-	     {  TrunOnChg = false;
-		 // IsChargingOn = false;
-             }
-          else  if(reg_val==CHG_ENABLE)		  
-                           TrunOnChg = true;
-       #endif	   
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-                         rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
+	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 				CHG_EN_MASK, reg_val);
-	
-	
 	if (rc) {
 		pr_err("Failed to %s charger rc=%d\n",
 				reg_val ? "enable" : "disable", rc);
@@ -732,10 +733,9 @@ static int qpnp_lbc_bat_if_configure_btc(struct qpnp_lbc_chip *chip)
 		mask |= BTC_COLD_MASK;
 	}
 
-	if (!chip->cfg_btc_disabled) {
-		mask |= BTC_COMP_EN_MASK;
+	mask |= BTC_COMP_EN_MASK;
+	if (!chip->cfg_btc_disabled)
 		btc_cfg |= BTC_COMP_EN_MASK;
-	}
 
 	pr_debug("BTC configuration mask=%x\n", btc_cfg);
 
@@ -746,6 +746,75 @@ static int qpnp_lbc_bat_if_configure_btc(struct qpnp_lbc_chip *chip)
 		pr_err("Failed to configure BTC rc=%d\n", rc);
 
 	return rc;
+}
+
+static int qpnp_chg_collapsible_chgr_config(struct qpnp_lbc_chip *chip,
+		bool enable)
+{
+	u8 reg_val;
+	int rc;
+
+	pr_debug("Configure for %scollapsible charger\n",
+			enable ? "" : "non-");
+	/*
+	 * The flow to enable/disable the collapsible charger configuration:
+	 *	Enable:  Override USBIN_LLIMIT_OK -->
+	 *		 Disable VIN_MIN comparator -->
+	 *		 Enable CHG_GONE comparator
+	 *	Disable: Enable VIN_MIN comparator -->
+	 *		 Enable USBIN_LLIMIT_OK -->
+	 *		 Disable CHG_GONE comparator
+	 */
+	if (enable) {
+		/* Override USBIN_LLIMIT_OK */
+		reg_val = USBIN_LLIMIT_OK_OVERRIDE_1;
+		rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+				chip->usb_chgpth_base,
+				USB_COMP_OVR1_REG,
+				USBIN_LLIMIT_OK_MASK, reg_val);
+		if (rc) {
+			pr_err("Failed to override USB_LLIMIT_OK rc = %d\n",
+							rc);
+			return rc;
+		}
+	}
+
+	/* Configure VIN_MIN comparator */
+	rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+			chip->chgr_base, CHG_TEST_LOOP_REG,
+			VIN_MIN_LOOP_DISABLE_BIT,
+			enable ? VIN_MIN_LOOP_DISABLE_BIT : 0);
+	if (rc) {
+		pr_err("Failed to %s VIN_MIN comparator rc = %d\n",
+				enable ? "disable" : "enable", rc);
+		return rc;
+	}
+
+	if (!enable) {
+		/* Enable USBIN_LLIMIT_OK */
+		reg_val = USBIN_LLIMIT_OK_NO_OVERRIDE;
+		rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+				chip->usb_chgpth_base,
+				USB_COMP_OVR1_REG,
+				USBIN_LLIMIT_OK_MASK, reg_val);
+		if (rc) {
+			pr_err("Failed to override USB_LLIMIT_OK rc = %d\n",
+							rc);
+			return rc;
+		}
+	}
+
+	/* Configure CHG_GONE comparator */
+	reg_val = enable ? CHG_GONE_OK_EN_BIT : 0;
+	rc = __qpnp_lbc_secure_masked_write(chip->spmi,
+			chip->usb_chgpth_base, USB_OVP_TST5_REG,
+			CHG_GONE_OK_EN_BIT, reg_val);
+	if (rc) {
+		pr_err("Failed to write CHG_GONE comparator rc = %d\n", rc);
+		return rc;
+	}
+
+	return 0;
 }
 
 #define QPNP_LBC_VBATWEAK_MIN_UV        3000000
@@ -808,16 +877,6 @@ static int qpnp_lbc_vddmax_set(struct qpnp_lbc_chip *chip, int voltage)
 		return -EINVAL;
 	}
 
-
-       //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-       #if defined (WT_USE_FAN54015)    
-	   if(Fan54015Voreg!=voltage)   //   ChgrCFGchanged
-               {
-	         Fan54015Voreg=voltage;
-                 ChgrCFGchanged = true;
-	   	}
-       #endif
-     //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 	spin_lock_irqsave(&chip->hw_access_lock, flags);
 	reg_val = (voltage - QPNP_LBC_VBAT_MIN_MV) / QPNP_LBC_VBAT_STEP_MV;
 	pr_debug("voltage=%d setting %02x\n", voltage, reg_val);
@@ -970,39 +1029,16 @@ static int qpnp_lbc_ibatmax_set(struct qpnp_lbc_chip *chip, int chg_current)
 {
 	u8 reg_val;
 	int rc;
-	//+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-        #if defined (WT_USE_FAN54015)
-	int  original_current;
-        #endif
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 
 	if (chg_current > QPNP_LBC_IBATMAX_MAX)
 		pr_debug("bad mA=%d clamping current\n", chg_current);
 
-
-	 //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-        #if defined (WT_USE_FAN54015)
-	     if(Fan54015Iochg!=chg_current)  //  ChgrCFGchanged	
-	        { ChgrCFGchanged=true;
-	          Fan54015Iochg = chg_current;
-	          original_current = chg_current;
-                  chg_current = 100;
-	     	}
-        #endif
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 	chg_current = clamp(chg_current, QPNP_LBC_IBATMAX_MIN,
 						QPNP_LBC_IBATMAX_MAX);
 	reg_val = (chg_current - QPNP_LBC_IBATMAX_MIN) / QPNP_LBC_I_STEP_MA;
 
 	rc = qpnp_lbc_write(chip, chip->chgr_base + CHG_IBAT_MAX_REG,
 				&reg_val, 1);
-
-      //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-        #if defined (WT_USE_FAN54015)
-	    chg_current = original_current;
-        #endif
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-	
 	if (rc)
 		pr_err("Failed to set IBAT_MAX rc=%d\n", rc);
 	else
@@ -1179,15 +1215,7 @@ static int get_prop_battery_voltage_now(struct qpnp_lbc_chip *chip)
 		return 0;
 	}
 
-
-       //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-       #if defined (WT_USE_FAN54015) 
-                BattVol = results.physical;      
-       #endif
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-
-
-	return results.physical;                               
+	return results.physical;
 }
 
 static int get_prop_batt_present(struct qpnp_lbc_chip *chip)
@@ -1226,8 +1254,6 @@ static int get_prop_batt_health(struct qpnp_lbc_chip *chip)
 		return POWER_SUPPLY_HEALTH_COOL;
 	if (chip->bat_is_warm)
 		return POWER_SUPPLY_HEALTH_WARM;
-	if (chip->chg_voltage == POWER_SUPPLY_HEALTH_OVERVOLTAGE)
-		return POWER_SUPPLY_HEALTH_OVERVOLTAGE;
 
 	return POWER_SUPPLY_HEALTH_GOOD;
 }
@@ -1255,51 +1281,12 @@ static int get_prop_charge_type(struct qpnp_lbc_chip *chip)
 
 static int get_prop_batt_status(struct qpnp_lbc_chip *chip)
 {
-        //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-        #if defined (WT_USE_FAN54015)
-		int chg_status=0;  
-	#else	
-	//-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 	int rc;
 	u8 reg_val;
-	#endif   //NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 
 	if (qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done)
 		return POWER_SUPPLY_STATUS_FULL;
 
-       
-	//+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-        #if defined (WT_USE_FAN54015)
-            chg_status = fan54015_getcharge_stat();
-	   
-	    if(chg_status<0)
-		{  pr_err("Failed to read Fan54015 status! \n");
-                   return POWER_SUPPLY_CHARGE_TYPE_NONE;
-	    	}
-	   else  if(chg_status&0x01)
-	   	        {    if(fan_54015_batt_current<0&&fan_54015_batt_current>-100000&&fan_54015_batt_ocv>4340000)
-				{  
-                                      printk(KERN_WARNING  "~ status=POWER_SUPPLY_STATUS_FULL  \n");
-				     return POWER_SUPPLY_STATUS_FULL;
-	   	                }
-	                     printk(KERN_WARNING  "~ status=POWER_SUPPLY_STATUS_CHARGING  \n");
-	   	             return POWER_SUPPLY_STATUS_CHARGING;
-	   	        }
-	             else if((chg_status==0)&&VbusValid&&(!OTGturnOn))    
-			       {
-                                  printk(KERN_WARNING  "~ status=POWER_SUPPLY_STATUS_CHARGING  \n");
-				  return POWER_SUPPLY_STATUS_CHARGING;
-			      }
-			     else if(OTGturnOn)
-			     	{
-                                   printk(KERN_WARNING  "~ status=POWER_SUPPLY_STATUS_DISCHARGING  \n");
-				   return POWER_SUPPLY_STATUS_DISCHARGING;
-			     	}
-          return POWER_SUPPLY_STATUS_DISCHARGING;
-	   	
-       #else		
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-      
 	rc = qpnp_lbc_read(chip, chip->chgr_base + INT_RT_STS_REG,
 				&reg_val, 1);
 	if (rc) {
@@ -1311,7 +1298,6 @@ static int get_prop_batt_status(struct qpnp_lbc_chip *chip)
 		return POWER_SUPPLY_STATUS_CHARGING;
 
 	return POWER_SUPPLY_STATUS_DISCHARGING;
-     #endif   //NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 }
 
 static int get_prop_current_now(struct qpnp_lbc_chip *chip)
@@ -1345,13 +1331,6 @@ static int get_prop_capacity(struct qpnp_lbc_chip *chip)
 		chip->bms_psy->get_property(chip->bms_psy,
 				POWER_SUPPLY_PROP_CAPACITY, &ret);
 		soc = ret.intval;
-
-              //+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-               #if defined (WT_USE_FAN54015) 
-                BattSOC = soc;
-               #endif
-             //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-		
 		if (soc == 0) {
 			if (!qpnp_lbc_is_usb_chg_plugged_in(chip))
 				pr_warn_ratelimited("Batt 0, CHG absent\n");
@@ -1385,12 +1364,6 @@ static int get_prop_batt_temp(struct qpnp_lbc_chip *chip)
 	}
 	pr_debug("get_bat_temp %d, %lld\n", results.adc_code,
 							results.physical);
-
-	//+NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
-               #if defined (WT_USE_FAN54015) 
-                BattTemp = (int)results.physical;
-               #endif
-      //-NewFeature,mahao.wt,ADD,2015.3.16,add Fan54015 driver
 
 	return (int)results.physical;
 }
@@ -1721,9 +1694,6 @@ static int qpnp_batt_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		val->intval = get_prop_batt_present(chip);
-		break;
-	case POWER_SUPPLY_PROP_TECHNOLOGY:
-		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
 		val->intval = chip->cfg_max_voltage_mv * 1000;
@@ -2210,6 +2180,7 @@ static int show_lbc_config(struct seq_file *m, void *data)
 			"cfg_min_voltage_mv\t=\t%d\n"
 			"cfg_charger_detect_eoc\t=\t%d\n"
 			"cfg_disable_vbatdet_based_recharge\t=\t%d\n"
+			"cfg_collapsible_chgr_support\t=\t%d\n"
 			"cfg_batt_weak_voltage_uv\t=\t%d\n"
 			"cfg_warm_bat_mv\t=\t%d\n"
 			"cfg_cool_bat_mv\t=\t%d\n"
@@ -2235,6 +2206,7 @@ static int show_lbc_config(struct seq_file *m, void *data)
 			chip->cfg_min_voltage_mv,
 			chip->cfg_charger_detect_eoc,
 			chip->cfg_disable_vbatdet_based_recharge,
+			chip->cfg_collapsible_chgr_support,
 			chip->cfg_batt_weak_voltage_uv,
 			chip->cfg_warm_bat_mv,
 			chip->cfg_cool_bat_mv,
@@ -2380,6 +2352,11 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 			of_property_read_bool(chip->spmi->dev.of_node,
 					"qcom,chgr-led-support");
 
+	/* Get the collapsible charger support property */
+	chip->cfg_collapsible_chgr_support =
+			of_property_read_bool(chip->spmi->dev.of_node,
+					"qcom,collapsible-chgr-support");
+
 	/* Disable charging when faking battery values */
 	if (chip->cfg_use_fake_battery)
 		chip->cfg_charging_disabled = true;
@@ -2439,62 +2416,69 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 			chip->cfg_charger_detect_eoc,
 			chip->cfg_disable_vbatdet_based_recharge,
 			chip->cfg_chgr_led_support);
-	pr_debug("use-external-charger=%d, thermal_levels=%d\n",
+	pr_debug("collapsible-chg-support=%d, use-external-charger=%d, thermal_levels=%d\n",
+			chip->cfg_collapsible_chgr_support,
 			chip->cfg_use_external_charger,
 			chip->cfg_thermal_levels);
 	return rc;
 }
 
+#define CHG_REMOVAL_DETECT_DLY_MS	300
+static irqreturn_t qpnp_lbc_chg_gone_irq_handler(int irq, void *_chip)
+{
+	struct qpnp_lbc_chip *chip = _chip;
+	int chg_gone;
+
+	if (chip->cfg_collapsible_chgr_support) {
+		chg_gone = qpnp_lbc_is_chg_gone(chip);
+		pr_debug("chg-gone triggered, rt_sts: %d\n", chg_gone);
+		if (chg_gone) {
+			/*
+			 * Disable charger to prevent fastchg irq storming
+			 * if a non-collapsible charger is being used.
+			 */
+			pr_debug("disable charging for non-collapsbile charger\n");
+			qpnp_lbc_charger_enable(chip, COLLAPSE, 0);
+			qpnp_lbc_disable_irq(chip, &chip->irqs[USBIN_VALID]);
+			qpnp_lbc_disable_irq(chip, &chip->irqs[USB_CHG_GONE]);
+			qpnp_chg_collapsible_chgr_config(chip, 0);
+			/*
+			 * Check after a delay if the charger is still
+			 * inserted. It decides if a non-collapsible
+			 * charger is being used, or charger has been
+			 * removed.
+			 */
+			schedule_delayed_work(&chip->collapsible_detection_work,
+				msecs_to_jiffies(CHG_REMOVAL_DETECT_DLY_MS));
+		}
+	}
+
+	return IRQ_HANDLED;
+}
+
 static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 {
 	struct qpnp_lbc_chip *chip = _chip;
-	int usb_present,rc;
-        u8 usbin_path_sts;
+	int usb_present;
 	unsigned long flags;
 
 	usb_present = qpnp_lbc_is_usb_chg_plugged_in(chip);
 	pr_debug("usbin-valid triggered: %d\n", usb_present);
-        
-        rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + USB_CHG_PTH_STS,&usbin_path_sts, 1);
-	if (rc) {
-	        pr_debug("spmi read failed: addr=0x%x, rc=0x%x\n",
-				        chip->usb_chgpth_base + USB_CHG_PTH_STS, usbin_path_sts);
-	}
-                if(usbin_path_sts == 0x50){
-                        pr_err("jeft USB overvoltage\n");
-			chip->chg_voltage = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
-                        power_supply_set_health_state(chip->usb_psy, POWER_SUPPLY_HEALTH_OVERVOLTAGE);
-                }
-                else if(usbin_path_sts == 0x10){
-                       pr_err("jeft USB undervoltage\n");
-                }
-                else{
-		        chip->chg_voltage = 0;
-                }
 
 	if (chip->usb_present ^ usb_present) {
 		chip->usb_present = usb_present;
 		if (!usb_present) {
-                        
-                        //+NewFeature,mahao.wt,MODIFY,2015.3.16,add Fan54015 driver
-                        #if defined (WT_USE_FAN54015) 
-			 printk(KERN_WARNING   "~Vbus Invalid.  \n");			
-                         IsUsbPlugIn = false;
-			 IsTAPlugIn = false;          
-			TrunOnChg = false;            
-			// IsChargingOn = false;    
-			ResetFan54015 = true;     
-			VbusValid = false;
-			schedule_work(&chg_fast_work);
-		       #endif     
-	               //-NewFeature,mahao.wt,MODIFY,2015.3.16,add Fan54015 driver
-	               
 			qpnp_lbc_charger_enable(chip, CURRENT, 0);
 			spin_lock_irqsave(&chip->ibat_change_lock, flags);
 			chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
 			qpnp_lbc_set_appropriate_current(chip);
 			spin_unlock_irqrestore(&chip->ibat_change_lock,
 								flags);
+			if (chip->cfg_collapsible_chgr_support)
+				chip->non_collapsible_chgr_detected = false;
+
+			if (chip->supported_feature_flag & VDD_TRIM_SUPPORTED)
+				alarm_try_to_cancel(&chip->vddtrim_alarm);
 		} else {
 			/*
 			 * Override VBAT_DET comparator to start charging
@@ -2504,22 +2488,20 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
 
 			/*
+			 * If collapsible charger supported, enable chgr_gone
+			 * irq, and configure for collapsible charger.
+			 */
+			if (chip->cfg_collapsible_chgr_support &&
+					!chip->non_collapsible_chgr_detected) {
+				qpnp_lbc_enable_irq(chip,
+						&chip->irqs[USB_CHG_GONE]);
+				qpnp_chg_collapsible_chgr_config(chip, 1);
+			}
+			/*
 			 * Enable SOC based charging to make sure
 			 * charging gets enabled on USB insertion
 			 * irrespective of battery SOC above resume_soc.
 			 */
-			 
-			//+NewFeature,mahao.wt,MODIFY,2015.3.16,add Fan54015 driver   
-                        #if defined (WT_USE_FAN54015) 
-			
-			 printk(KERN_WARNING   "~Vbus Valid.  \n");			
-                         TrunOnChg = true;      
-			 ResetFan54015 = true;
-			 VbusValid = true;
-			 schedule_work(&chg_fast_work);
-		       #endif
-	               //-NewFeature,mahao.wt,MODIFY,2015.3.16,add Fan54015 driver 
-	               
 			qpnp_lbc_charger_enable(chip, SOC, 1);
 		}
 
@@ -2820,6 +2802,9 @@ static int qpnp_lbc_request_irqs(struct qpnp_lbc_chip *chip)
 	SPMI_REQUEST_IRQ(chip, USBIN_VALID, rc, usbin_valid, 0,
 			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, 1);
 
+	SPMI_REQUEST_IRQ(chip, USB_CHG_GONE, rc, chg_gone, 0,
+			IRQF_TRIGGER_RISING, 1);
+
 	SPMI_REQUEST_IRQ(chip, USB_OVER_TEMP, rc, usb_overtemp, 0,
 			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, 0);
 
@@ -2855,6 +2840,8 @@ static int qpnp_lbc_get_irqs(struct qpnp_lbc_chip *chip, u8 subtype,
 						USBIN_VALID, usbin-valid);
 		SPMI_GET_IRQ_RESOURCE(chip, rc, spmi_resource,
 						USB_OVER_TEMP, usb-over-temp);
+		SPMI_GET_IRQ_RESOURCE(chip, rc, spmi_resource,
+						USB_CHG_GONE, chg-gone);
 		break;
 	};
 
@@ -2870,8 +2857,33 @@ static void determine_initial_status(struct qpnp_lbc_chip *chip)
 	 * Set USB psy online to avoid userspace from shutting down if battery
 	 * capacity is at zero and no chargers online.
 	 */
-	if (chip->usb_present)
+	if (chip->usb_present) {
+		if (chip->cfg_collapsible_chgr_support &&
+				!chip->non_collapsible_chgr_detected) {
+			qpnp_lbc_enable_irq(chip,
+					&chip->irqs[USB_CHG_GONE]);
+			qpnp_chg_collapsible_chgr_config(chip, 1);
+		}
 		power_supply_set_online(chip->usb_psy, 1);
+	}
+}
+
+static void qpnp_lbc_collapsible_detection_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct qpnp_lbc_chip *chip = container_of(dwork,
+			struct qpnp_lbc_chip,
+			collapsible_detection_work);
+
+	if (qpnp_lbc_is_usb_chg_plugged_in(chip)) {
+		chip->non_collapsible_chgr_detected = true;
+		pr_debug("Non-collapsible charger detected\n");
+	} else {
+		chip->non_collapsible_chgr_detected = false;
+		pr_debug("Charger removal detected\n");
+	}
+	qpnp_lbc_charger_enable(chip, COLLAPSE, 1);
+	qpnp_lbc_enable_irq(chip, &chip->irqs[USBIN_VALID]);
 }
 
 #define IBAT_TRIM			-300
@@ -2923,108 +2935,6 @@ exit:
 	pm_relax(chip->dev);
 }
 
-//for test wanggongzhen.wt test:no need
-static int disable_software_temp_monitor = 0;
-int dis_sof_temp_monitor_set(const char *val, const struct kernel_param *kp)
-{
-	if (!val) val = "1";
-	return strtobool(val, kp->arg);
-}
-
-int dis_sof_temp_monitor_get(char *buffer, const struct kernel_param *kp)
-{
-	disable_software_temp_monitor = 1;
-	return sprintf(buffer, "%c", *(bool *)kp->arg ? 'Y' : 'N');
-}
-
-static struct kernel_param_ops dis_sof_temp_monitor_ops = {
-	.set = dis_sof_temp_monitor_set,
-	.get = dis_sof_temp_monitor_get,
-};
-
-module_param_cb(disable_software_temp_monitor, &dis_sof_temp_monitor_ops
-							, &disable_software_temp_monitor, 0644);
-
-MODULE_PARM_DESC(debug, "1:disable software temp monitor , 0:enable,default:0");
-
-#define DELAY_COUNT 3
-static void qpnp_lbc_batt_temp_alarm_work_fn(struct work_struct *work)
-{
-	ktime_t kt;
-	int batt_temp = 250;
-	u64 monitor_second = 10LL*NSEC_PER_SEC;
-	static int disabled_delay_times = DELAY_COUNT;
-	static int enabled_delay_times = DELAY_COUNT;
-	static int chg_enabled = 0;
-	static int chg_disabled = 0;
-	struct qpnp_lbc_chip *chip = container_of(work, struct qpnp_lbc_chip,batt_temp_work);
-	if((!qpnp_lbc_is_usb_chg_plugged_in(chip))||(chip->chg_done))
-	{
-		enabled_delay_times = DELAY_COUNT;
-		disabled_delay_times = DELAY_COUNT;
-		chg_disabled = 0;
-		chg_enabled = 0;
-		qpnp_lbc_charger_enable(chip , PARALLEL , 1);
-		pr_debug("wgz usb plug out or charge done\n");
-		goto exit;
-	}
-
-	if(disable_software_temp_monitor)
-	{
-		qpnp_lbc_charger_enable(chip , PARALLEL , 1);
-		enabled_delay_times = DELAY_COUNT;
-		disabled_delay_times = DELAY_COUNT;
-		chg_disabled = 0;
-		chg_enabled = 0;
-		goto out;
-	}
-
-	batt_temp = get_prop_batt_temp(chip);
-	pr_debug("wgz temp = %d , disabled_delay_times = %d , enabled_delay_times = %d\n" 
-			, batt_temp , disabled_delay_times , enabled_delay_times);
-	
-	if((batt_temp > 500 || batt_temp < 0 ) && !chg_disabled)
-	{
-		if((disabled_delay_times++) >= DELAY_COUNT)
-		{
-			pr_err("wgz temp high disable charger\n");
-			enabled_delay_times = 0;
-			disabled_delay_times = 0;
-			chg_disabled = 1;
-			chg_enabled = 0;
-			qpnp_lbc_charger_enable(chip , PARALLEL , 0);
-			power_supply_changed(&chip->batt_psy);
-		}
-	}
-	else 
-	{
-		if((!chg_enabled)&&(10 <= batt_temp)&&(batt_temp <= 480))
-		{
-			if(enabled_delay_times++ == DELAY_COUNT)
-			{
-				pr_err("wgz ok ,enable charger\n");
-				enabled_delay_times = 0;
-				disabled_delay_times = 0;
-				chg_disabled = 0;
-				chg_enabled = 1;
-
-				qpnp_lbc_charger_enable(chip , PARALLEL , 1);
-				if(batt_temp < 350 && batt_temp > 150)
-				{
-					//monitor_second = 120LL*NSEC_PER_SEC; //this should open when lenovo's test is passed
-				}
-				power_supply_changed(&chip->batt_psy);
-			}
-		}
-	}
-out:	
-	kt = ns_to_ktime(monitor_second);
-	alarm_start_relative(&chip->batt_temp_alarm, kt);
-exit:
-	pm_relax(chip->dev);
-}
-
-
 static enum alarmtimer_restart vddtrim_callback(struct alarm *alarm,
 					ktime_t now)
 {
@@ -3033,19 +2943,6 @@ static enum alarmtimer_restart vddtrim_callback(struct alarm *alarm,
 
 	pm_stay_awake(chip->dev);
 	schedule_work(&chip->vddtrim_work);
-
-	return ALARMTIMER_NORESTART;
-}
-
-static enum alarmtimer_restart batt_temp_alarm_callback(struct alarm *alarm,
-					ktime_t now)
-{
-	struct qpnp_lbc_chip *chip = container_of(alarm, struct qpnp_lbc_chip,
-						batt_temp_alarm);
-
-	pr_debug("wgz  %s:%d\n" , __FUNCTION__ , __LINE__);
-	pm_stay_awake(chip->dev);
-	schedule_work(&chip->batt_temp_work);
 
 	return ALARMTIMER_NORESTART;
 }
@@ -3290,9 +3187,9 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 	spin_lock_init(&chip->ibat_change_lock);
 	spin_lock_init(&chip->irq_lock);
 	INIT_WORK(&chip->vddtrim_work, qpnp_lbc_vddtrim_work_fn);
-	INIT_WORK(&chip->batt_temp_work, qpnp_lbc_batt_temp_alarm_work_fn);
 	alarm_init(&chip->vddtrim_alarm, ALARM_REALTIME, vddtrim_callback);
-	alarm_init(&chip->batt_temp_alarm, ALARM_REALTIME, batt_temp_alarm_callback);
+	INIT_DELAYED_WORK(&chip->collapsible_detection_work,
+			qpnp_lbc_collapsible_detection_work);
 
 	/* Get all device-tree properties */
 	rc = qpnp_charger_read_dt_props(chip);
@@ -3436,12 +3333,6 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 		if (!ent)
 			pr_err("Couldn't create lbc_config debug file\n");
 	}
-	
-	if(qpnp_lbc_is_usb_chg_plugged_in(chip))
-	{
-		kt = ns_to_ktime(5LL*NSEC_PER_SEC);
-		alarm_start_relative(&chip->batt_temp_alarm, kt);
-	}
 
 	pr_info("Probe chg_dis=%d bpd=%d usb=%d batt_pres=%d batt_volt=%d soc=%d\n",
 			chip->cfg_charging_disabled,
@@ -3469,8 +3360,6 @@ static int is_parallel_charger(struct spmi_device *spmi)
 
 static int qpnp_lbc_probe(struct spmi_device *spmi)
 {
-
-	
 	if (is_parallel_charger(spmi))
 		return qpnp_lbc_parallel_probe(spmi);
 	else
@@ -3486,9 +3375,8 @@ static int qpnp_lbc_remove(struct spmi_device *spmi)
 		alarm_cancel(&chip->vddtrim_alarm);
 		cancel_work_sync(&chip->vddtrim_work);
 	}
+	cancel_delayed_work_sync(&chip->collapsible_detection_work);
 	debugfs_remove_recursive(chip->debug_root);
-    alarm_cancel(&chip->batt_temp_alarm);
-	cancel_work_sync(&chip->batt_temp_work);
 	if (chip->bat_if_base)
 		power_supply_unregister(&chip->batt_psy);
 	mutex_destroy(&chip->jeita_configure_lock);
