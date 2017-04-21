@@ -105,6 +105,9 @@
 		qcom,pm-qos-active-latency = <401>;
 		qcom,pm-qos-wakeup-latency = <401>;
 
+		/* Avoid L2PC on big cluster CPUs (CPU 0,1,2,3) */
+		qcom,l2pc-cpu-mask = <0x0000000F>;
+
 		/* Power levels */
 		qcom,gpu-pwrlevels {
 			#address-cells = <1>;
