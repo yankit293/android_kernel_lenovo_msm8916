@@ -28,10 +28,11 @@
 #include "q6voice.h"
 
 #define TIMEOUT_MS 300
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-extern bool in_phone_call;
-#include <linux/input/doubletap2wake.h>
-#endif 
+
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#include <linux/input/prevent_sleep.h>
+bool in_phone_call = false;
+#endif
 
 #define CMD_STATUS_SUCCESS 0
 #define CMD_STATUS_FAIL 1
@@ -1611,12 +1612,6 @@ int voc_enable_dtmf_rx_detection(uint32_t session_id, uint32_t enable)
 						       v->dtmf_rx_detect_en);
 
 	mutex_unlock(&v->lock);
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-  	in_phone_call = false;
-  	DT2W_PRINFO("%s: Phone Call Ended, set the flag to %s\n",
-  		__func__, (in_phone_call ? "true" : "false"));
-#endif
 
 	return ret;
 }
@@ -4790,8 +4785,8 @@ static int voc_disable_cvp(uint32_t session_id)
 		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
 
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-  	in_phone_call = true;
- 	pr_debug("%s: set wake_helper in_phone_call: %s\n", __func__, (in_phone_call ? "true" : "false"));
+	in_phone_call = true;
+	pr_debug("%s: set wake_helper in_phone_call: %s\n", __func__, (in_phone_call ? "true" : "false"));
 #endif
 
 done:
@@ -5301,6 +5296,12 @@ int voc_end_voice_call(uint32_t session_id)
 	if (common.ec_ref_ext)
 		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
 
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	in_phone_call = false;
+	pr_debug("%s: set wake_helper in_phone_call: %s\n", __func__, (in_phone_call ? "true" : "false"));
+#endif
+ 
+
 	mutex_unlock(&v->lock);
 	return ret;
 }
@@ -5446,11 +5447,6 @@ int voc_enable_device(uint32_t session_id)
 			goto done;
 		}
 		v->voc_state = VOC_RUN;
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
- 		in_phone_call = true;
-  		DT2W_PRINFO("%s: Phone Call on Start, set the flag to %s\n",
-  			__func__, (in_phone_call ? "true" : "false"));
-#endif
 	} else {
 		pr_debug("%s: called in voc state=%d, No_OP\n",
 			 __func__, v->voc_state);
