@@ -19,8 +19,8 @@
 #include <linux/fb.h>
 
 #define NOOP_IOSCHED "noop"
-#define RESTORE_DELAY_MS (60000)
-#define CHANGE_DELAY_MS (60000)
+#define RESTORE_DELAY_MS (10000)
+#define CHANGE_DELAY_MS (10000)
 
 struct req_queue_data {
 	struct list_head list;
@@ -77,9 +77,11 @@ static int fb_notifier_callback(struct notifier_block *nb,
 		 * when the screen is turned on. Also wait for a certain seconds
 		 * to avoid accident.
 		 */
-		cancel_delayed_work_sync(&set_to_noop);
-		schedule_delayed_work(&restore_prev,
-				msecs_to_jiffies(RESTORE_DELAY_MS));
+		if (delayed_work_pending(&set_to_noop));
+			cancel_delayed_work_sync(&set_to_noop);
+		queue_delayed_work(system_power_efficient_wq,
+			&restore_prev,
+			msecs_to_jiffies(RESTORE_DELAY_MS));
 		break;
 	default:
 		/*
@@ -87,7 +89,8 @@ static int fb_notifier_callback(struct notifier_block *nb,
 		 * the fb notifier chain call in case weird things can happen
 		 * when switching elevators while the screen is off.
 		 */
-		cancel_delayed_work_sync(&restore_prev);
+		if (delayed_work_pending(&restore_prev));
+			cancel_delayed_work_sync(&restore_prev);
 		schedule_delayed_work(&set_to_noop,
 				msecs_to_jiffies(CHANGE_DELAY_MS));
 	}
