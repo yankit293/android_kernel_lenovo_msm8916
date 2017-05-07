@@ -737,8 +737,8 @@ void snd_timer_interrupt(struct snd_timer * timer, unsigned long ticks_left)
 			ti->cticks = ti->ticks;
 		} else {
 			ti->flags &= ~SNDRV_TIMER_IFLG_RUNNING;
-			if (--timer->running)
-				list_del(&ti->active_list);
+			--timer->running;
+			list_del_init(&ti->active_list);
 		}
 		if ((timer->hw.flags & SNDRV_TIMER_HW_TASKLET) ||
 		    (ti->flags & SNDRV_TIMER_IFLG_FAST))
@@ -799,7 +799,6 @@ void snd_timer_interrupt(struct snd_timer * timer, unsigned long ticks_left)
 }
 
 /*
-
  */
 
 int snd_timer_new(struct snd_card *card, char *id, struct snd_timer_id *tid,
@@ -1659,9 +1658,21 @@ static int snd_timer_user_params(struct file *file,
 		return -EBADFD;
 	if (copy_from_user(&params, _params, sizeof(params)))
 		return -EFAULT;
-	if (!(t->hw.flags & SNDRV_TIMER_HW_SLAVE) && params.ticks < 1) {
-		err = -EINVAL;
-		goto _end;
+	if (!(t->hw.flags & SNDRV_TIMER_HW_SLAVE)) {
+		u64 resolution;
+
+		if (params.ticks < 1) {
+			err = -EINVAL;
+			goto _end;
+		}
+
+		/* Don't allow resolution less than 1ms */
+		resolution = snd_timer_resolution(tu->timeri);
+		resolution *= params.ticks;
+		if (resolution < 1000000) {
+			err = -EINVAL;
+			goto _end;
+		}
 	}
 	if (params.queue_size > 0 &&
 	    (params.queue_size < 32 || params.queue_size > 1024)) {
