@@ -36,9 +36,6 @@ config HIGHMEM
 config NUMA
 	def_bool n
 
-config UID16
-	def_bool y
-
 config RWSEM_GENERIC_SPINLOCK
 	def_bool y
 
