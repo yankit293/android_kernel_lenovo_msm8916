@@ -350,7 +350,8 @@ static unsigned int vfs_dent_type(uint8_t type)
  */
 static int ubifs_readdir(struct file *file, void *dirent, filldir_t filldir)
 {
-	int err, over = 0;
+	int err = 0;
+	int over = 0;
 	loff_t pos = file->f_pos;
 	struct qstr nm;
 	union ubifs_key key;
