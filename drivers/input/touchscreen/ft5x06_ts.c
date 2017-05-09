@@ -1341,7 +1341,8 @@ static int fb_notifier_callback(struct notifier_block *self,
 		if (ft5x06_data->pdata->resume_in_workqueue) {
 			if (event == FB_EARLY_EVENT_BLANK &&
 						 *blank == FB_BLANK_UNBLANK)
-				schedule_work(&ft5x06_data->fb_notify_work);
+				queue_work(system_power_efficient_wq,
+                                                 &ft5x06_data->fb_notify_work);
 			else if (event == FB_EVENT_BLANK &&
 						 *blank == FB_BLANK_POWERDOWN) {
 				flush_work(&ft5x06_data->fb_notify_work);
