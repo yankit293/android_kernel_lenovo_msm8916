@@ -1611,7 +1611,7 @@ static int eligible_cpu(u64 task_load, u64 cpu_load, int cpu, int sync)
 	if (mostly_idle_cpu_sync(cpu, cpu_load, sync))
 		return 1;
 
-	if (rq->max_possible_capacity != max_possible_capacity)
+	if (rq->capacity != max_capacity)
 		return !spill_threshold_crossed(task_load, cpu_load, rq);
 
 	return 0;
@@ -4255,7 +4255,7 @@ unsigned int nr_eligible_big_tasks(int cpu)
 	int nr = rq->nr_running;
 	int nr_small = rq->nr_small_tasks;
 
-	if (rq->max_possible_capacity != max_possible_capacity)
+	if (rq->capacity != max_capacity)
 		return nr_big;
 
 	/* Consider all (except small) tasks on max_capacity cpu as big tasks */
