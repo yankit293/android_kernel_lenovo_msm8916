@@ -660,6 +660,7 @@ static int sm5414_fastchg_current_set(struct sm5414_charger *chip,
 static int sm5414_float_voltage_set(struct sm5414_charger *chip, int vfloat_mv)
 {
     u8 temp;
+    int rc;
 
     if ((vfloat_mv < MIN_FLOAT_MV) || (vfloat_mv > MAX_FLOAT_MV)) {
         dev_err(chip->dev, "bad float voltage mv =%d asked to set\n",
@@ -670,7 +671,16 @@ static int sm5414_float_voltage_set(struct sm5414_charger *chip, int vfloat_mv)
     temp = (vfloat_mv - MIN_FLOAT_MV) / VFLOAT_STEP_MV;
     temp = temp << SM5414_CHGCTRL3_BATREG_SHIFT;
     pr_debug("%s,vfloat_mv=%d,temp=%d\n", __func__,vfloat_mv,temp);
-    return sm5414_masked_write(chip, SM5414_CHGCTRL3, SM5414_CHGCTRL3_BATREG_MASK << SM5414_CHGCTRL3_BATREG_SHIFT, temp);
+    rc = sm5414_masked_write(chip, SM5414_CHGCTRL3, SM5414_CHGCTRL3_BATREG_MASK << SM5414_CHGCTRL3_BATREG_SHIFT, temp);
+
+ 	if (rc) {
+ 		dev_err(chip->dev, "Couldn't set float voltage rc = %d\n", rc);
+ 	} else {
+ 		power_supply_set_voltage_limit(chip->usb_psy,
+ 				vfloat_mv * 1000);
+ 	}
+ 
+ 	return rc;
 }
 
 #define MIN_TOPOFF_MA		100
