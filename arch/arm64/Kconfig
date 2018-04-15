@@ -714,6 +714,8 @@ source "lib/Kconfig"
 
 source "arch/arm64/mm/Kconfig"
 
-source "arch/arm64/hotplug/ALUCARD/Kconfig"
+source "arch/arm64/hotplug/alucard/Kconfig"
 
-source "arch/arm64/hotplug/THUNDERPLUG/Kconfig"
+source "arch/arm64/hotplug/thunderplug/Kconfig"
+
+source "arch/arm64/hotplug/clusterplug/Kconfig"
