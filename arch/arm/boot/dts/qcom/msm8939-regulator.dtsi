@@ -21,7 +21,7 @@
 		onnn,step-size = <6250>;
 		onnn,min-slew-ns = <416>;
 		onnn,max-slew-ns = <3333>;
-		regulator-min-microvolt = <1000000>;
+		regulator-min-microvolt = <1050000>;
 		regulator-max-microvolt = <1350000>;
 		onnn,min-setpoint = <600000>;
 		pintrl-names = "default";
@@ -35,7 +35,7 @@
 		compatible = "fairchild,fan53555-regulator";
 		reg = <0x60>;
 		fairchild,backup-vsel = <1>;
-		regulator-min-microvolt = <1000000>;
+		regulator-min-microvolt = <1050000>;
 		regulator-max-microvolt = <1350000>;
 		regulator-ramp-delay = <1250>;
 		pintrl-names = "default";
@@ -84,11 +84,11 @@
 		regulator-max-microvolt = <28>;
 
 		qcom,cpr-fuse-corners = <3>;
-		qcom,cpr-voltage-ceiling = <1050000 1150000 1300000>;
-		qcom,cpr-voltage-floor = <1000000 1000000 1100000>;
+		qcom,cpr-voltage-ceiling = <1050000 1150000 1350000>;
+		qcom,cpr-voltage-floor = <1050000 1050000 1137500>;
 		vdd-apc-supply = <&ncp6335d>;
 		vdd-apc-optional-prim-supply = <&ncp6335d>;
-		vdd-apc-optional-sec-supply = <&fan53555>;
+                vdd-apc-optional-sec-supply = <&fan53555>;
 
 		qcom,vdd-mx-corner-map = <4 5 7>;
 		qcom,vdd-mx-vmin-method = <4>;
@@ -115,7 +115,7 @@
 		qcom,cpr-fuse-target-quot = <42 24 6>;
 		qcom,cpr-fuse-ro-sel = <54 54 54>;
 		qcom,cpr-quot-min-diff = <0>;
-		qcom,cpr-init-voltage-ref = <1030000 1100000 1280000>;
+		qcom,cpr-init-voltage-ref = <1050000 1150000 1350000>;
 		qcom,cpr-fuse-init-voltage =
 					<27 36 6 0>,
 					<27 18 6 0>,
@@ -184,6 +184,10 @@
 			<2          2          1 0xffffffff 0xffffffff 0xffffffff>,
 			<2          2          2 0xffffffff 0xffffffff 0xffffffff>,
 			<2          2          3 0xffffffff 0xffffffff 0xffffffff>,
+			<5          6          0 0xffffffff 0xffffffff 0xffffffff>,
+			<5          6          1 0xffffffff 0xffffffff 0xffffffff>,
+			<5          6          2 0xffffffff 0xffffffff 0xffffffff>,
+			<5          6          3 0xffffffff 0xffffffff 0xffffffff>,
 			<0xffffffff 0xffffffff 0 0xffffffff 0xffffffff 0xffffffff>,
 			<0xffffffff 0xffffffff 1 0xffffffff 0xffffffff 0xffffffff>,
 			<0xffffffff 0xffffffff 2 0xffffffff 0xffffffff 0xffffffff>,
@@ -193,8 +197,12 @@
 					<0   20000  0>,
 					<0   50000  0>,
 					<0   20000  0>,
+					<0   50000  0>,
 					<0   20000  0>,
-					<0 (-10000) 0>,
+					<0   50000  0>,
+					<0   20000  0>,
+					<0   50000  0>,
+					<0   20000  0>,
 					<0   50000  0>,
 					<0   20000  0>,
 					<0   50000  0>,
@@ -218,6 +226,10 @@
 					<0 (-20) (-124)>, /* NOM - 10mv, TURBO - 60mv	*/
 					<0  104  (-124)>, /* NOM + 50mv, TURBO - 60mv	*/
 					<0   41  (-124)>, /* NOM + 20mv, TURBO - 60mv	*/
+					<0   41   (-41)>, /* NOM + 20mv, TURBO - 20mv	*/
+					<0 (-20)  (-41)>, /* NOM - 10mv, TURBO - 20mv	*/
+					<0  104   (-41)>, /* NOM + 50mv, TURBO - 20mv	*/
+					<0   41   (-41)>, /* NOM + 20mv, TURBO - 20mv	*/
 					<0  104   (-41)>, /* NOM + 50mv, TURBO - 20mv	*/
 					<0   41   (-41)>, /* NOM + 20mv, TURBO - 20mv	*/
 					<0  104   (-41)>, /* NOM + 50mv, TURBO - 20mv	*/
@@ -236,6 +248,10 @@
 					<0 0 62>,
 					<0 0 62>,
 					<0 0 62>,
+					<0 0 40>,
+					<0 0 40>,
+					<0 0 40>,
+					<0 0 40>,
 					<0 0 40>,
 					<0 0 40>,
 					<0 0 40>,
@@ -272,6 +288,14 @@
 			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
 			 (-104) (-104) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>,
 			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
+			 (-104) (-41) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>,
+			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
+			 (-104) (-104) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>,
+			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
+			 (-104) (-41) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>,
+			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
+			 (-104) (-104) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>,
+			<0 0 0 (-104) (-104) (-104) (-104) (-104) (-104) (-104)
 			 (-104) (-41) (-41) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
 		qcom,cpr-virtual-corner-init-voltage-adjustment =
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 35000 0 0 0 0>,
@@ -286,6 +310,10 @@
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 35000 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 35000 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 35000 0 0 0 0>,
+			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
+			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
+			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
+			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0     0 0 0 0 0>,
