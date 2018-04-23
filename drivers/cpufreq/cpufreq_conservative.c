@@ -12,21 +12,25 @@
  */
 
 #include <linux/slab.h>
+#include <linux/tick.h>
 #include "cpufreq_governor.h"
 
 /* Conservative governor macros */
-#define DEF_FREQUENCY_UP_THRESHOLD		(80)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
+#define DEF_FREQUENCY_UP_THRESHOLD		(90)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(30)
 #define DEF_FREQUENCY_STEP			(5)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
 #define MAX_SAMPLING_DOWN_FACTOR		(10)
+#define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
+#define TOUCH_LOAD_DURATION			(1000)
 
 static DEFINE_PER_CPU(struct cs_cpu_dbs_info_s, cs_cpu_dbs_info);
+static DEFINE_PER_CPU(struct cs_dbs_tuners *, cached_tuners);
 
-static inline unsigned int get_freq_target(struct cs_dbs_tuners *cs_tuners,
+static inline unsigned int get_freq_target(unsigned int freq_step,
 					   struct cpufreq_policy *policy)
 {
-	unsigned int freq_target = (cs_tuners->freq_step * policy->max) / 100;
+	unsigned int freq_target = (freq_step * policy->max) / 100;
 
 	/* max freq cannot be less than 100. But who knows... */
 	if (unlikely(freq_target == 0))
@@ -46,6 +50,7 @@ static inline unsigned int get_freq_target(struct cs_dbs_tuners *cs_tuners,
  */
 static void cs_check_cpu(int cpu, unsigned int load)
 {
+	bool touch = false;
 	struct cs_cpu_dbs_info_s *dbs_info = &per_cpu(cs_cpu_dbs_info, cpu);
 	struct cpufreq_policy *policy = dbs_info->cdbs.cur_policy;
 	struct dbs_data *dbs_data = policy->governor_data;
@@ -58,15 +63,32 @@ static void cs_check_cpu(int cpu, unsigned int load)
 	if (cs_tuners->freq_step == 0)
 		return;
 
+	if (dbs_info->cdbs.deferred_periods < UINT_MAX) {
+		unsigned int freq_target = dbs_info->cdbs.deferred_periods *
+				get_freq_target(cs_tuners->freq_step, policy);
+		if (dbs_info->requested_freq > freq_target)
+			dbs_info->requested_freq -= freq_target;
+		else
+			dbs_info->requested_freq = policy->min;
+		dbs_info->cdbs.deferred_periods = UINT_MAX;
+	}
+
+	if (jiffies_to_msecs(jiffies - touch_jiffies) <
+				cs_tuners->touch_load_duration)
+		touch = true;
+
 	/* Check for frequency increase */
 	if (load > cs_tuners->up_threshold) {
+		unsigned int freq_step = cs_tuners->freq_step;
+
 		dbs_info->down_skip = 0;
 
 		/* if we are already at full speed then break out early */
 		if (dbs_info->requested_freq == policy->max)
 			return;
-
-		dbs_info->requested_freq += get_freq_target(cs_tuners, policy);
+		if (touch)
+			freq_step *= 2;
+		dbs_info->requested_freq += get_freq_target(freq_step, policy);
 
 		if (dbs_info->requested_freq > policy->max)
 			dbs_info->requested_freq = policy->max;
@@ -90,7 +112,7 @@ static void cs_check_cpu(int cpu, unsigned int load)
 		if (policy->cur == policy->min)
 			return;
 
-		freq_target = get_freq_target(cs_tuners, policy);
+		freq_target = get_freq_target(cs_tuners->freq_step, policy);
 		if (dbs_info->requested_freq > freq_target)
 			dbs_info->requested_freq -= freq_target;
 		else
@@ -105,7 +127,7 @@ static void cs_check_cpu(int cpu, unsigned int load)
 static void cs_dbs_timer(struct work_struct *work)
 {
 	struct cs_cpu_dbs_info_s *dbs_info = container_of(work,
-			struct cs_cpu_dbs_info_s, cdbs.work.work);
+			struct cs_cpu_dbs_info_s, cdbs.dwork.work);
 	unsigned int cpu = dbs_info->cdbs.cur_policy->cpu;
 	struct cs_cpu_dbs_info_s *core_dbs_info = &per_cpu(cs_cpu_dbs_info,
 			cpu);
@@ -267,12 +289,29 @@ static ssize_t store_freq_step(struct dbs_data *dbs_data, const char *buf,
 	return count;
 }
 
+static ssize_t store_touch_load_duration(struct dbs_data *dbs_data,
+		const char *buf, size_t count)
+{
+	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+
+	cs_tuners->touch_load_duration = input;
+	return count;
+}
+
+
 show_store_one(cs, sampling_rate);
 show_store_one(cs, sampling_down_factor);
 show_store_one(cs, up_threshold);
 show_store_one(cs, down_threshold);
 show_store_one(cs, ignore_nice_load);
 show_store_one(cs, freq_step);
+show_store_one(cs, touch_load_duration);
 declare_show_sampling_rate_min(cs);
 
 gov_sys_pol_attr_rw(sampling_rate);
@@ -281,6 +320,7 @@ gov_sys_pol_attr_rw(up_threshold);
 gov_sys_pol_attr_rw(down_threshold);
 gov_sys_pol_attr_rw(ignore_nice_load);
 gov_sys_pol_attr_rw(freq_step);
+gov_sys_pol_attr_rw(touch_load_duration);
 gov_sys_pol_attr_ro(sampling_rate_min);
 
 static struct attribute *dbs_attributes_gov_sys[] = {
@@ -291,6 +331,7 @@ static struct attribute *dbs_attributes_gov_sys[] = {
 	&down_threshold_gov_sys.attr,
 	&ignore_nice_load_gov_sys.attr,
 	&freq_step_gov_sys.attr,
+	&touch_load_duration_gov_sys.attr,
 	NULL
 };
 
@@ -307,6 +348,7 @@ static struct attribute *dbs_attributes_gov_pol[] = {
 	&down_threshold_gov_pol.attr,
 	&ignore_nice_load_gov_pol.attr,
 	&freq_step_gov_pol.attr,
+	&touch_load_duration_gov_pol.attr,
 	NULL
 };
 
@@ -317,14 +359,29 @@ static struct attribute_group cs_attr_group_gov_pol = {
 
 /************************** sysfs end ************************/
 
-static int cs_init(struct dbs_data *dbs_data)
+static void save_tuners(struct cpufreq_policy *policy,
+			  struct cs_dbs_tuners *tuners)
+{
+	int cpu;
+
+	if (have_governor_per_policy())
+		cpu = cpumask_first(policy->related_cpus);
+	else
+		cpu = 0;
+
+	WARN_ON(per_cpu(cached_tuners, cpu) &&
+		per_cpu(cached_tuners, cpu) != tuners);
+	per_cpu(cached_tuners, cpu) = tuners;
+}
+
+static struct cs_dbs_tuners *alloc_tuners(struct cpufreq_policy *policy)
 {
 	struct cs_dbs_tuners *tuners;
 
 	tuners = kzalloc(sizeof(*tuners), GFP_KERNEL);
 	if (!tuners) {
 		pr_err("%s: kzalloc failed\n", __func__);
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	tuners->up_threshold = DEF_FREQUENCY_UP_THRESHOLD;
@@ -332,17 +389,62 @@ static int cs_init(struct dbs_data *dbs_data)
 	tuners->sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
 	tuners->ignore_nice_load = 0;
 	tuners->freq_step = DEF_FREQUENCY_STEP;
+	tuners->touch_load_duration = TOUCH_LOAD_DURATION;
+
+	save_tuners(policy, tuners);
+
+	return tuners;
+}
+
+static struct cs_dbs_tuners *restore_tuners(struct cpufreq_policy *policy)
+{
+	int cpu;
+
+	if (have_governor_per_policy())
+		cpu = cpumask_first(policy->related_cpus);
+	else
+		cpu = 0;
+
+	return per_cpu(cached_tuners, cpu);
+}
+
+static int cs_init(struct dbs_data *dbs_data, struct cpufreq_policy *policy)
+{
+	u64 idle_time;
+	int cpu;
+	struct cs_dbs_tuners *tuners;
+
+	tuners = restore_tuners(policy);
+	if (!tuners) {
+		tuners = alloc_tuners(policy);
+		if (IS_ERR(tuners))
+			return PTR_ERR(tuners);
+	}
+
+	cpu = get_cpu();
+	idle_time = get_cpu_idle_time_us(cpu, NULL);
+	put_cpu();
+	if (idle_time != -1ULL) {
+		/*
+		 * In nohz/micro accounting case we set the minimum frequency
+		 * not depending on HZ, but fixed (very low). The deferred
+		 * timer might skip some samples if idle/sleeping as needed.
+		 */
+		dbs_data->min_sampling_rate = MICRO_FREQUENCY_MIN_SAMPLE_RATE;
+	} else {
+		/* For correct statistics, we need 10 ticks for each measure */
+		dbs_data->min_sampling_rate =
+			MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
+	}
 
 	dbs_data->tuners = tuners;
-	dbs_data->min_sampling_rate = MIN_SAMPLING_RATE_RATIO *
-		jiffies_to_usecs(10);
 	mutex_init(&dbs_data->mutex);
 	return 0;
 }
 
 static void cs_exit(struct dbs_data *dbs_data)
 {
-	kfree(dbs_data->tuners);
+	//nothing to do
 }
 
 define_get_cpu_dbs_routines(cs_cpu_dbs_info);
@@ -391,7 +493,13 @@ static int __init cpufreq_gov_dbs_init(void)
 
 static void __exit cpufreq_gov_dbs_exit(void)
 {
+	int cpu;
+
 	cpufreq_unregister_governor(&cpufreq_gov_conservative);
+	for_each_possible_cpu(cpu) {
+		kfree(per_cpu(cached_tuners, cpu));
+		per_cpu(cached_tuners, cpu) = NULL;
+	}
 }
 
 MODULE_AUTHOR("Alexander Clouter <alex@digriz.org.uk>");

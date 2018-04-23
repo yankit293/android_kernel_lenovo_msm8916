@@ -134,8 +134,9 @@ struct cpu_dbs_common_info {
 	u64 prev_cpu_idle;
 	u64 prev_cpu_wall;
 	u64 prev_cpu_nice;
+	unsigned int deferred_periods;
 	struct cpufreq_policy *cur_policy;
-	struct delayed_work work;
+	struct delayed_work dwork;
 	/*
 	 * percpu mutex that serializes governor limit change with gov_dbs_timer
 	 * invocation. We do not want gov_dbs_timer to run when user is changing
@@ -170,6 +171,9 @@ struct od_dbs_tuners {
 	unsigned int up_threshold;
 	unsigned int powersave_bias;
 	unsigned int io_is_busy;
+	unsigned int touch_load;
+	unsigned int touch_load_duration;
+	unsigned int touch_load_threshold;
 };
 
 struct cs_dbs_tuners {
@@ -178,7 +182,13 @@ struct cs_dbs_tuners {
 	unsigned int sampling_down_factor;
 	unsigned int up_threshold;
 	unsigned int down_threshold;
+	unsigned int down_threshold_suspended;
 	unsigned int freq_step;
+	unsigned int touch_load_duration;
+	unsigned int sleep_depth;
+	unsigned int boost_enabled;
+	unsigned int boost_count;
+	unsigned int boost_ceiling;
 };
 
 /* Common Governor data across policies */
@@ -201,7 +211,7 @@ struct common_dbs_data {
 	void *(*get_cpu_dbs_info_s)(int cpu);
 	void (*gov_dbs_timer)(struct work_struct *work);
 	void (*gov_check_cpu)(int cpu, unsigned int load);
-	int (*init)(struct dbs_data *dbs_data);
+	int (*init)(struct dbs_data *dbs_data, struct cpufreq_policy *policy);
 	void (*exit)(struct dbs_data *dbs_data);
 
 	/* Governor specific ops, see below */
@@ -256,6 +266,9 @@ static ssize_t show_sampling_rate_min_gov_pol				\
 	struct dbs_data *dbs_data = policy->governor_data;		\
 	return sprintf(buf, "%u\n", dbs_data->min_sampling_rate);	\
 }
+
+extern struct mutex cpufreq_governor_lock;
+extern unsigned long touch_jiffies;
 
 void dbs_check_cpu(struct dbs_data *dbs_data, int cpu);
 bool need_load_eval(struct cpu_dbs_common_info *cdbs,

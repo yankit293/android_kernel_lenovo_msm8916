@@ -19,8 +19,12 @@
 #include <linux/export.h>
 #include <linux/kernel_stat.h>
 #include <linux/slab.h>
+#include <linux/input.h>
 
 #include "cpufreq_governor.h"
+
+unsigned long touch_jiffies;
+EXPORT_SYMBOL_GPL(touch_jiffies);
 
 static struct attribute_group *get_sysfs_attr(struct dbs_data *dbs_data)
 {
@@ -36,14 +40,29 @@ void dbs_check_cpu(struct dbs_data *dbs_data, int cpu)
 	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
 	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
 	struct cpufreq_policy *policy;
-	unsigned int max_load = 0;
+	unsigned int sampling_rate;
+	unsigned int max_load = 0, deferred_periods = UINT_MAX;
 	unsigned int ignore_nice;
 	unsigned int j;
 
-	if (dbs_data->cdata->governor == GOV_ONDEMAND)
+	if (dbs_data->cdata->governor == GOV_ONDEMAND) {
+		struct od_cpu_dbs_info_s *od_dbs_info =
+				dbs_data->cdata->get_cpu_dbs_info_s(cpu);
+
+		/*
+		 * Sometimes, the ondemand governor uses an additional
+		 * multiplier to give long delays. So apply this multiplier to
+		 * the 'sampling_rate', so as to keep the wake-up-from-idle
+		 * detection logic a bit conservative.
+		 */
+		sampling_rate = od_tuners->sampling_rate;
+		sampling_rate *= od_dbs_info->rate_mult;
+
 		ignore_nice = od_tuners->ignore_nice_load;
-	else
+	} else {
+		sampling_rate = cs_tuners->sampling_rate;
 		ignore_nice = cs_tuners->ignore_nice_load;
+	}
 
 	policy = cdbs->cur_policy;
 
@@ -71,6 +90,9 @@ void dbs_check_cpu(struct dbs_data *dbs_data, int cpu)
 			(cur_wall_time - j_cdbs->prev_cpu_wall);
 		j_cdbs->prev_cpu_wall = cur_wall_time;
 
+		if (cur_idle_time < j_cdbs->prev_cpu_idle)
+			cur_idle_time = j_cdbs->prev_cpu_idle;
+
 		idle_time = (unsigned int)
 			(cur_idle_time - j_cdbs->prev_cpu_idle);
 		j_cdbs->prev_cpu_idle = cur_idle_time;
@@ -96,11 +118,42 @@ void dbs_check_cpu(struct dbs_data *dbs_data, int cpu)
 		if (unlikely(!wall_time || wall_time < idle_time))
 			continue;
 
-		load = 100 * (wall_time - idle_time) / wall_time;
+		/*
+		 * If the CPU had gone completely idle, and a task just woke up
+		 * on this CPU now, it would be unfair to calculate 'load' the
+		 * usual way for this elapsed time-window, because it will show
+		 * near-zero load, irrespective of how CPU intensive that task
+		 * actually is. This is undesirable for latency-sensitive bursty
+		 * workloads.
+		 *
+		 * To avoid this, we calculate 'load' only on the last
+		 * sampling period.
+		 *
+		 * Detecting this situation is easy: the governor's deferrable
+		 * timer would not have fired during CPU-idle periods. Hence
+		 * an unusually large 'wall_time' (as compared to the sampling
+		 * rate) indicates this scenario.
+		 *
+		 */
+		if (unlikely(wall_time > (2 * sampling_rate))) {
+			unsigned int busy = wall_time - idle_time;
+			unsigned int periods = wall_time / sampling_rate;
+
+			if (periods < deferred_periods)
+				deferred_periods = periods;
+
+			if (busy > sampling_rate)
+				load = 100;
+			else
+				load = 100 * busy / sampling_rate;
+		} else {
+			load = 100 * (wall_time - idle_time) / wall_time;
+		}
 
 		if (load > max_load)
 			max_load = load;
 	}
+	cdbs->deferred_periods = deferred_periods;
 
 	dbs_data->cdata->gov_check_cpu(cpu, max_load);
 }
@@ -111,7 +164,7 @@ static inline void __gov_queue_work(int cpu, struct dbs_data *dbs_data,
 {
 	struct cpu_dbs_common_info *cdbs = dbs_data->cdata->get_cpu_cdbs(cpu);
 
-	mod_delayed_work_on(cpu, system_wq, &cdbs->work, delay);
+	mod_delayed_work_on(cpu, system_wq, &cdbs->dwork, delay);
 }
 
 void gov_queue_work(struct dbs_data *dbs_data, struct cpufreq_policy *policy,
@@ -119,8 +172,9 @@ void gov_queue_work(struct dbs_data *dbs_data, struct cpufreq_policy *policy,
 {
 	int i;
 
+	mutex_lock(&cpufreq_governor_lock);
 	if (!policy->governor_enabled)
-		return;
+		goto out_unlock;
 
 	if (!all_cpus) {
 		/*
@@ -135,6 +189,9 @@ void gov_queue_work(struct dbs_data *dbs_data, struct cpufreq_policy *policy,
 		for_each_cpu(i, policy->cpus)
 			__gov_queue_work(i, dbs_data, delay);
 	}
+
+out_unlock:
+	mutex_unlock(&cpufreq_governor_lock);
 }
 EXPORT_SYMBOL_GPL(gov_queue_work);
 
@@ -146,7 +203,7 @@ static inline void gov_cancel_work(struct dbs_data *dbs_data,
 
 	for_each_cpu(i, policy->cpus) {
 		cdbs = dbs_data->cdata->get_cpu_cdbs(i);
-		cancel_delayed_work_sync(&cdbs->work);
+		cancel_delayed_work_sync(&cdbs->dwork);
 	}
 }
 
@@ -180,6 +237,83 @@ static void set_sampling_rate(struct dbs_data *dbs_data,
 		od_tuners->sampling_rate = sampling_rate;
 	}
 }
+
+static void gov_input_event(struct input_handle *handle, unsigned int type,
+		unsigned int code, int value)
+{
+	touch_jiffies = jiffies;
+}
+
+static int gov_input_connect(struct input_handler *handler,
+		struct input_dev *dev, const struct input_device_id *id)
+{
+	struct input_handle *handle;
+	int error;
+
+	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
+	if (!handle)
+		return -ENOMEM;
+
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "cpufreq";
+
+	error = input_register_handle(handle);
+	if (error)
+		goto err2;
+
+	error = input_open_device(handle);
+	if (error)
+		goto err1;
+
+	return 0;
+err1:
+	input_unregister_handle(handle);
+err2:
+	kfree(handle);
+	return error;
+}
+
+static void gov_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
+}
+
+static const struct input_device_id gov_ids[] = {
+	/* multi-touch touchscreen */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
+			BIT_MASK(ABS_MT_POSITION_X) |
+			BIT_MASK(ABS_MT_POSITION_Y) },
+	},
+	/* touchpad */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
+		.absbit = { [BIT_WORD(ABS_X)] =
+			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
+	},
+	/* Keypad */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+	},
+	{ },
+};
+
+static struct input_handler gov_input_handler = {
+	.event		= gov_input_event,
+	.connect	= gov_input_connect,
+	.disconnect	= gov_input_disconnect,
+	.name		= "cpufreq_gov",
+	.id_table	= gov_ids,
+};
 
 int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		struct common_dbs_data *cdata, unsigned int event)
@@ -220,7 +354,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 		dbs_data->cdata = cdata;
 		dbs_data->usage_count = 1;
-		rc = cdata->init(dbs_data);
+		rc = cdata->init(dbs_data, policy);
 		if (rc) {
 			pr_err("%s: POLICY_INIT: init() failed\n", __func__);
 			kfree(dbs_data);
@@ -319,12 +453,13 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			j_cdbs->cur_policy = policy;
 			j_cdbs->prev_cpu_idle = get_cpu_idle_time(j,
 					       &j_cdbs->prev_cpu_wall, io_busy);
+
 			if (ignore_nice)
 				j_cdbs->prev_cpu_nice =
 					kcpustat_cpu(j).cpustat[CPUTIME_NICE];
 
 			mutex_init(&j_cdbs->timer_mutex);
-			INIT_DEFERRABLE_WORK(&j_cdbs->work,
+			INIT_DEFERRABLE_WORK(&j_cdbs->dwork,
 					     dbs_data->cdata->gov_dbs_timer);
 		}
 
@@ -345,6 +480,9 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 		gov_queue_work(dbs_data, policy,
 				delay_for_sampling_rate(sampling_rate), true);
+
+		if (!cpu)
+			rc = input_register_handler(&gov_input_handler);
 		break;
 
 	case CPUFREQ_GOV_STOP:
@@ -359,9 +497,16 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 		mutex_unlock(&dbs_data->mutex);
 
+		if (!cpu)
+			input_unregister_handler(&gov_input_handler);
 		break;
 
 	case CPUFREQ_GOV_LIMITS:
+		mutex_lock(&dbs_data->mutex);
+		if (!cpu_cdbs->cur_policy) {
+			mutex_unlock(&dbs_data->mutex);
+			break;
+		}
 		mutex_lock(&cpu_cdbs->timer_mutex);
 		if (policy->max < cpu_cdbs->cur_policy->cur)
 			__cpufreq_driver_target(cpu_cdbs->cur_policy,
@@ -371,6 +516,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 					policy->min, CPUFREQ_RELATION_L);
 		dbs_check_cpu(dbs_data, cpu);
 		mutex_unlock(&cpu_cdbs->timer_mutex);
+		mutex_unlock(&dbs_data->mutex);
 		break;
 	}
 	return 0;
