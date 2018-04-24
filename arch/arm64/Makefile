@@ -28,6 +28,12 @@ AS		+= -EL
 LD		+= -EL
 endif
 
+arch-$(CONFIG_ARCH_MSM8916)	:= $(call cc-option,-mcpu=cortex-a53,-march=armv8-a)
+tune-$(CONFIG_ARCH_MSM8916)	:= -mtune=cortex-a53
+
+KBUILD_CFLAGS	+= $(arch-y) $(tune-y)
+KBUILD_AFLAGS	+= $(arch-y) $(tune-y)
+
 comma = ,
 
 CHECKFLAGS	+= -D__aarch64__
