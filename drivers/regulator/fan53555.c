@@ -82,7 +82,7 @@ enum {
 };
 
 static const int slew_rate_plan[] = {
-	64000,
+	54000,
 	32000,
 	16000,
 	8000,
@@ -344,7 +344,7 @@ static int fan53555_device_setup(struct fan53555_device_info *di,
 	else if (pdata->slew_rate & 0x7)
 		di->slew_rate = pdata->slew_rate;
 	else
-		di->slew_rate = FAN53555_SLEW_RATE_64MV;
+		di->slew_rate = FAN53555_SLEW_RATE_54MV;
 
 	reg = FAN53555_CONTROL;
 	data = di->slew_rate << CTL_SLEW_SHIFT;
