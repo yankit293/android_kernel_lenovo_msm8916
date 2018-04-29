@@ -190,8 +190,10 @@ static int cpufreq_policy_notifier(struct notifier_block *nb,
 
 	case CPUFREQ_REMOVE_POLICY:
 		mutex_lock(&state_lock);
-		state[policy->cpu]->on = false;
-		update_all_devfreqs();
+		if (state[policy->cpu]) {
+			state[policy->cpu]->on = false;
+			update_all_devfreqs();
+		}
 		mutex_unlock(&state_lock);
 		break;
 	}
@@ -241,7 +243,7 @@ static int register_cpufreq(void)
 	mutex_lock(&cpufreq_reg_lock);
 
 	if (cpufreq_cnt)
-		goto out;
+		goto cnt_not_zero;
 
 	get_online_cpus();
 	ret = cpufreq_register_notifier(&cpufreq_policy_nb,
@@ -264,9 +266,9 @@ static int register_cpufreq(void)
 			cpufreq_cpu_put(policy);
 		}
 	}
-	put_online_cpus();
-
 out:
+	put_online_cpus();
+cnt_not_zero:
 	if (!ret)
 		cpufreq_cnt++;
 	mutex_unlock(&cpufreq_reg_lock);
