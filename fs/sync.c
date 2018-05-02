@@ -23,7 +23,7 @@ extern bool power_suspend_active;
 extern bool dyn_fsync_active;
 #endif
 
-bool fsync_enabled = true;
+bool fsync_enabled = false;
 module_param(fsync_enabled, bool, 0755);
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
@@ -205,7 +205,6 @@ SYSCALL_DEFINE1(syncfs, int, fd)
  */
 int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 {
-
 #ifdef CONFIG_DYNAMIC_FSYNC
 	if (likely(dyn_fsync_active && !power_suspend_active))
 		return 0;
@@ -258,7 +257,6 @@ static int do_fsync(unsigned int fd, int datasync)
 
 SYSCALL_DEFINE1(fsync, unsigned int, fd)
 {
-
 #ifdef CONFIG_DYNAMIC_FSYNC
 	if (likely(dyn_fsync_active && !power_suspend_active))
 		return 0;
