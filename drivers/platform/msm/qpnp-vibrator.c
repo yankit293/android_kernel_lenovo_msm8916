@@ -272,8 +272,6 @@ static void qpnp_vib_enable(struct timed_output_dev *dev, int value)
 {
 	struct qpnp_vib *vib = container_of(dev, struct qpnp_vib,
 					 timed_dev);
-	VIBRATOR_INFO("%s,value=%d\n",__FUNCTION__,value);
-
 	unsigned long flags;
 
 retry:
@@ -294,15 +292,6 @@ retry:
 			      ktime_set(value / 1000, (value % 1000) * 1000000),
 			      HRTIMER_MODE_REL);
 	}
-	qpnp_vib_set(vib, vib->state);
-
-	spin_unlock_irqrestore(&vib->lock, flags);
-}
-
-static void qpnp_vib_update(struct work_struct *work)
-{
-	struct qpnp_vib *vib = container_of(work, struct qpnp_vib,
-					 work);
 	qpnp_vib_set(vib, vib->state);
 
 	spin_unlock_irqrestore(&vib->lock, flags);
@@ -489,7 +478,6 @@ static int qpnp_vibrator_probe(struct spmi_device *spmi)
 	}
 
 	spin_lock_init(&vib->lock);
-	INIT_WORK(&vib->work, qpnp_vib_update);
 
 	hrtimer_init(&vib->vib_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	vib->vib_timer.function = qpnp_vib_timer_func;
